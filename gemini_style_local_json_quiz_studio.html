@@ -1,0 +1,2507 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudySync — Interactive Local JSON Quiz Studio</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- KaTeX for LaTeX Math & Chemistry Rendering ($\text{Na}^+/\text{K}^+$) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        gemini: {
+                            bg: '#131314',
+                            surface: '#1e1f20',
+                            card: '#282a2c',
+                            border: '#37393b',
+                            accent: '#a8c7fa',
+                            blue: '#4c8df6',
+                            green: '#6dd58c',
+                            red: '#f28b82',
+                            amber: '#fdd663'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Smooth custom scrollbars and transitions */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(156, 163, 175, 0.3);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(156, 163, 175, 0.5);
+        }
+        .choice-btn {
+            transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .choice-btn:active:not(:disabled) {
+            transform: scale(0.992);
+        }
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-fade-up {
+            animation: fadeSlideUp 0.25s ease-out forwards;
+        }
+        .gemini-gradient-text {
+            background: linear-gradient(90deg, #4c8df6, #a8c7fa, #d3e3fd);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .light .gemini-gradient-text {
+            background: linear-gradient(90deg, #1a73e8, #669df6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-gemini-bg text-slate-900 dark:text-slate-100 min-h-screen flex flex-col font-sans selection:bg-blue-500/30 transition-colors duration-200">
+
+    <!-- Hidden File & Folder Inputs for Sidebar / Drag-and-Drop Sync -->
+    <input type="file" id="fallbackFolderInput" webkitdirectory directory multiple class="hidden" onchange="handleFallbackFolderSelect(event)">
+    <input type="file" id="fallbackFileInput" accept=".json,application/json" multiple class="hidden" onchange="handleFallbackFileSelect(event)">
+
+    <!-- Drag & Drop Overlay -->
+    <div id="dropOverlay" class="fixed inset-0 z-50 bg-blue-600/20 dark:bg-blue-500/20 backdrop-blur-sm border-4 border-dashed border-blue-500 rounded-3xl m-4 hidden items-center justify-center pointer-events-none">
+        <div class="bg-white dark:bg-gemini-surface px-8 py-6 rounded-2xl shadow-2xl flex flex-col items-center gap-3 text-center">
+            <div class="w-14 h-14 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center">
+                <i data-lucide="folders" class="w-8 h-8"></i>
+            </div>
+            <p class="text-lg font-bold">Drop one or multiple <code class="font-mono text-blue-500">.json</code> deck files here</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">All dropped JSON files will be added to your Deck Library immediately</p>
+        </div>
+    </div>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+        <!-- Left Sidebar: Deck Library, Controls & Question Navigator (4 cols on desktop) -->
+        <aside class="lg:col-span-4 space-y-4 order-2 lg:order-1">
+
+            <!-- Clean Deck Library Card (No Header Needed) -->
+            <div class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-2xl p-4 shadow-sm space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5">
+                        <i data-lucide="library" class="w-4 h-4 text-blue-500"></i>
+                        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">Decks (<code class="font-mono text-[11px] text-blue-500">./questions_deck</code>)</h2>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button onclick="rescanQuestionsDeckFolder(true)" class="p-1.5 rounded-lg text-xs text-slate-500 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-gemini-card transition" title="Rescan ./questions_deck/ folder">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="triggerLocalFileOpen()" class="p-1.5 rounded-lg text-xs text-slate-500 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-gemini-card transition" title="Load .json file(s)">
+                            <i data-lucide="file-plus-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="toggleTheme()" class="p-1.5 rounded-lg text-xs text-slate-500 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-gemini-card transition" title="Toggle Dark/Light Theme">
+                            <i id="themeIcon" data-lucide="sun" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="combineAllLoadedDecks()" class="px-2 py-1 rounded-lg text-[11px] font-medium bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20 transition" title="Combine all loaded decks into one study session">
+                            All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Folder Sync Status Banner -->
+                <div id="folderStatusBanner" class="text-[11px] px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card/80 text-slate-600 dark:text-slate-400 flex items-center justify-between gap-2">
+                    <span id="folderStatusText" class="truncate">Drop <code class="font-mono">.json</code> or select folder</span>
+                    <button onclick="triggerFolderOpen()" class="text-blue-500 hover:underline font-medium shrink-0">Pick Folder</button>
+                </div>
+
+                <!-- Scrollable Deck List -->
+                <div id="deckLibraryList" class="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                    <!-- Populated dynamically with discovered .json files from ./questions_deck/ -->
+                </div>
+            </div>
+
+            <!-- Study Mode & Settings Card -->
+            <div class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-2xl p-4 shadow-sm space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-400">Quiz Settings</h2>
+                    <span id="deckCountBadge" class="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-gemini-card text-slate-600 dark:text-slate-300">0 Qs</span>
+                </div>
+
+                <!-- Quiz Feedback Mode (Gemini Instant vs Exam Mode) -->
+                <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-gemini-bg rounded-xl border border-slate-200/60 dark:border-gemini-border">
+                    <button id="modeInstantBtn" onclick="setQuizMode('instant')" class="py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 bg-white dark:bg-gemini-card text-blue-600 dark:text-gemini-accent shadow-sm">
+                        <i data-lucide="zap" class="w-3.5 h-3.5"></i> Instant Study
+                    </button>
+                    <button id="modeExamBtn" onclick="setQuizMode('exam')" class="py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        <i data-lucide="clipboard-check" class="w-3.5 h-3.5"></i> Exam Mode
+                    </button>
+                </div>
+
+                <!-- Toggles -->
+                <div class="space-y-2 pt-1">
+                    <label class="flex items-center justify-between text-xs sm:text-sm cursor-pointer select-none py-1">
+                        <span class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                            <i data-lucide="shuffle" class="w-4 h-4 text-slate-400"></i>
+                            Shuffle Questions
+                        </span>
+                        <input type="checkbox" id="shuffleQuestionsToggle" onchange="toggleShuffleQuestions(this.checked)" class="w-4 h-4 accent-blue-600 rounded cursor-pointer">
+                    </label>
+                    <label class="flex items-center justify-between text-xs sm:text-sm cursor-pointer select-none py-1">
+                        <span class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                            <i data-lucide="list-Filter" class="w-4 h-4 text-slate-400"></i>
+                            Shuffle Choices (A-D)
+                        </span>
+                        <input type="checkbox" id="shuffleChoicesToggle" onchange="toggleShuffleChoices(this.checked)" class="w-4 h-4 accent-blue-600 rounded cursor-pointer">
+                    </label>
+                </div>
+
+                <!-- Reset / Retry Actions -->
+                <div class="pt-2 border-t border-slate-200 dark:border-gemini-border flex flex-wrap gap-2">
+                    <button onclick="resetQuizProgress()" class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-gemini-card dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-200 transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Restart Deck
+                    </button>
+                    <button id="retryMissedSideBtn" onclick="startRetryMissed()" class="hidden flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/20 transition">
+                        <i data-lucide="flame" class="w-3.5 h-3.5"></i> Retry Missed
+                    </button>
+                </div>
+            </div>
+
+            <!-- Question Navigator Card -->
+            <div class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-2xl p-4 shadow-sm space-y-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Question Map</h2>
+                    <!-- Filter Pills -->
+                    <div class="flex items-center gap-1 text-[11px]">
+                        <button onclick="setFilter('all')" id="filter-all" class="px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-gemini-accent font-medium">All</button>
+                        <button onclick="setFilter('missed')" id="filter-missed" class="px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-gemini-card">Missed</button>
+                        <button onclick="setFilter('bookmarked')" id="filter-bookmarked" class="px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-gemini-card">Saved</button>
+                    </div>
+                </div>
+
+                <!-- Grid of Question Pills -->
+                <div id="questionGrid" class="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-6 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Legend -->
+                <div class="pt-2 border-t border-slate-200 dark:border-gemini-border flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span> Correct</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block"></span> Missed</span>
+                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Saved</span>
+                </div>
+            </div>
+
+            <!-- Keyboard Shortcuts Helper -->
+            <div class="bg-white/60 dark:bg-gemini-surface/60 border border-slate-200/70 dark:border-gemini-border/70 rounded-2xl p-3.5 text-xs text-slate-500 dark:text-slate-400 space-y-2">
+                <div class="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="keyboard" class="w-3.5 h-3.5"></i> Keyboard Shortcuts
+                </div>
+                <div class="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[11px]">
+                    <div><kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">1-4</kbd> or <kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">A-D</kbd> Pick</div>
+                    <div><kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">Enter</kbd> / <kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">→</kbd> Next</div>
+                    <div><kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">←</kbd> Previous</div>
+                    <div><kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">H</kbd> Hint / <kbd class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-gemini-card font-mono">R</kbd> Restart</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Right Main Area: Gemini-Style Interactive Quiz Card (8 cols on desktop) -->
+        <section class="lg:col-span-8 order-1 lg:order-2 space-y-4">
+
+            <!-- Progress Header Bar -->
+            <div class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-2xl p-4 shadow-sm">
+                <div class="flex items-center justify-between text-xs sm:text-sm mb-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span id="questionCounterText" class="font-semibold text-slate-800 dark:text-slate-100">Question 1 of 10</span>
+                        <span id="topicBadge" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-gemini-accent border border-blue-500/20">Algorithms</span>
+                        <span id="questionTypeBadge" class="hidden px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30">TBO 4×T/F (0 / 0.2 / 0.6 / 1 pt)</span>
+                    </div>
+                    <div class="flex items-center gap-3 sm:gap-4 font-mono text-xs">
+                        <span class="text-blue-600 dark:text-gemini-accent font-semibold flex items-center gap-1" title="Total Points Earned (includes TBO 0 / 0.2 / 0.6 / 1.0 partial points)">
+                            <i data-lucide="trophy" class="w-3.5 h-3.5"></i>
+                            <span id="scorePointsText">0 / 0 pts</span>
+                        </span>
+                        <span class="text-emerald-600 dark:text-gemini-green flex items-center gap-1" title="Full 1.0 pt Correct">
+                            <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+                            <span id="scoreCorrectCount">0</span>
+                        </span>
+                        <span class="text-amber-500 dark:text-gemini-amber flex items-center gap-1" title="Partial Credit (0.2 or 0.6 pt)">
+                            <i data-lucide="pie-chart" class="w-3.5 h-3.5"></i>
+                            <span id="scorePartialCount">0</span>
+                        </span>
+                        <span class="text-rose-500 dark:text-gemini-red flex items-center gap-1" title="0 pt">
+                            <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+                            <span id="scoreWrongCount">0</span>
+                        </span>
+                        <span id="accuracyBadge" class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-gemini-card text-slate-600 dark:text-slate-300">100%</span>
+                    </div>
+                </div>
+                <!-- Smooth Progress Bar -->
+                <div class="w-full h-2 bg-slate-100 dark:bg-gemini-card rounded-full overflow-hidden">
+                    <div id="progressBarFill" class="h-full bg-gradient-to-r from-blue-500 to-indigo-400 transition-all duration-300 rounded-full" style="width: 10%"></div>
+                </div>
+            </div>
+
+            <!-- Main Interactive Question Card -->
+            <div id="quizCardContainer" class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-3xl p-5 sm:p-8 shadow-sm relative transition-all">
+                
+                <!-- Top Question Utilities (Hint & Bookmark) -->
+                <div class="flex items-center justify-between gap-2 mb-4">
+                    <span id="questionIdLabel" class="text-xs font-mono text-slate-400 dark:text-slate-500">#Q1</span>
+                    <div class="flex items-center gap-2">
+                        <button id="hintBtn" onclick="toggleHint()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-gemini-amber border border-amber-500/20 transition">
+                            <i data-lucide="lightbulb" class="w-3.5 h-3.5"></i>
+                            <span>Hint</span>
+                        </button>
+                        <button id="bookmarkBtn" onclick="toggleBookmarkCurrent()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-gemini-card dark:hover:bg-neutral-700 text-slate-600 dark:text-slate-300 transition" title="Bookmark question for review (Shortcut: B)">
+                            <i id="bookmarkIcon" data-lucide="bookmark" class="w-3.5 h-3.5"></i>
+                            <span id="bookmarkText">Save</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Problem Statement -->
+                <div id="questionStatement" class="text-base sm:text-xl font-medium leading-relaxed text-slate-900 dark:text-slate-100 mb-6 space-y-3">
+                    <!-- Rendered dynamically with code/markdown support -->
+                </div>
+
+                <!-- Optional Problem Image / Diagram Container -->
+                <div id="questionImageContainer" class="hidden mb-6">
+                    <!-- Populated via JS if question has an image or diagram -->
+                </div>
+
+                <!-- Collapsible Hint Drawer (Gemini style) -->
+                <div id="hintBox" class="hidden mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-900 dark:text-amber-200 text-sm animate-fade-up">
+                    <div class="flex items-start gap-2.5">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-500 shrink-0 mt-0.5"></i>
+                        <div>
+                            <span class="font-semibold block text-xs uppercase tracking-wider text-amber-600 dark:text-gemini-amber mb-0.5">Study Hint</span>
+                            <p id="hintContent" class="leading-relaxed"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Choices List -->
+                <div id="choicesContainer" class="space-y-3" role="listbox" aria-label="Answer Choices">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Gemini-Style Instant Explanation Box -->
+                <div id="explanationBox" class="hidden mt-6 p-5 rounded-2xl border transition-all animate-fade-up">
+                    <div class="flex items-start gap-3">
+                        <div id="explanationIconWrap" class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                            <i id="explanationIcon" data-lucide="check" class="w-5 h-5"></i>
+                        </div>
+                        <div class="space-y-1.5 flex-1 min-w-0">
+                            <div class="flex items-center justify-between">
+                                <h3 id="explanationTitle" class="font-bold text-sm sm:text-base">That's right!</h3>
+                                <span id="correctLetterTag" class="text-xs font-mono px-2 py-0.5 rounded bg-black/10 dark:bg-white/10">Answer: B</span>
+                            </div>
+                            <div id="explanationText" class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card Footer Navigation -->
+                <div class="mt-8 pt-5 border-t border-slate-200 dark:border-gemini-border flex items-center justify-between gap-3">
+                    <button id="prevBtn" onclick="prevQuestion()" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 hover:bg-slate-200 dark:bg-gemini-card dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-200 disabled:opacity-40 disabled:pointer-events-none transition">
+                        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                        <span>Previous</span>
+                    </button>
+
+                    <div class="flex items-center gap-2">
+                        <button id="finishExamBtn" onclick="showSummaryScreen()" class="hidden inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition">
+                            <i data-lucide="flag" class="w-4 h-4"></i>
+                            <span>Grade & Finish</span>
+                        </button>
+
+                        <button id="nextBtn" onclick="nextQuestion()" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 transition">
+                            <span id="nextBtnText">Next Question</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- End-of-Deck Summary / Results Card (Hidden until finished) -->
+            <div id="summaryCardContainer" class="hidden bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 animate-fade-up">
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-slate-200 dark:border-gemini-border pb-6">
+                    <div class="space-y-2 text-center sm:text-left">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 dark:text-gemini-accent">
+                            <i data-lucide="award" class="w-3.5 h-3.5"></i> Session Complete
+                        </span>
+                        <h2 class="text-2xl sm:text-3xl font-bold">Great study session!</h2>
+                        <p id="summarySubtitle" class="text-sm text-slate-500 dark:text-slate-400">Here is how you performed on this deck.</p>
+                    </div>
+
+                    <!-- Circular Score Ring -->
+                    <div class="relative w-28 h-28 flex items-center justify-center shrink-0">
+                        <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="42" stroke="currentColor" stroke-width="10" fill="transparent" class="text-slate-100 dark:text-gemini-card"></circle>
+                            <circle id="summaryScoreCircle" cx="50" cy="50" r="42" stroke="currentColor" stroke-width="10" fill="transparent" stroke-dasharray="264" stroke-dashoffset="60" stroke-linecap="round" class="text-blue-500 transition-all duration-700"></circle>
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span id="summaryPercentText" class="text-xl font-bold font-mono">85%</span>
+                            <span id="summaryPointsSubtext" class="text-[10px] font-mono text-slate-400">0 / 0 pts</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4 Metric Boxes -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-center">
+                    <div class="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                        <div id="sumCorrect" class="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-gemini-green font-mono">0</div>
+                        <div class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Full (1.0 pt)</div>
+                    </div>
+                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                        <div id="sumPartial" class="text-xl sm:text-2xl font-bold text-amber-600 dark:text-gemini-amber font-mono">0</div>
+                        <div class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Partial (0.2/0.6)</div>
+                    </div>
+                    <div class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20">
+                        <div id="sumWrong" class="text-xl sm:text-2xl font-bold text-rose-600 dark:text-gemini-red font-mono">0</div>
+                        <div class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Zero (0 pt)</div>
+                    </div>
+                    <div class="p-4 rounded-2xl bg-slate-500/10 border border-slate-500/20">
+                        <div id="sumSkipped" class="text-xl sm:text-2xl font-bold text-slate-600 dark:text-slate-300 font-mono">0</div>
+                        <div class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Unanswered</div>
+                    </div>
+                </div>
+
+                <!-- Summary Action Buttons -->
+                <div class="flex flex-wrap items-center justify-center sm:justify-end gap-3 pt-2">
+                    <button onclick="returnToQuestions()" class="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 hover:bg-slate-200 dark:bg-gemini-card dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-200 transition">
+                        Review Answers
+                    </button>
+                    <button id="summaryRetryMissedBtn" onclick="startRetryMissed()" class="px-4 py-2.5 rounded-xl text-sm font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition inline-flex items-center gap-2">
+                        <i data-lucide="flame" class="w-4 h-4"></i> Retry Missed Only
+                    </button>
+                    <button onclick="resetQuizProgress()" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition inline-flex items-center gap-2">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Start Fresh Round
+                    </button>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Modal 1: Live JSON Editor, Schema Guide & Local Sync Instructions -->
+    <div id="jsonModal" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-fade-up">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-200 dark:border-gemini-border flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <i data-lucide="file-json" class="w-5 h-5 text-blue-500"></i>
+                    <h3 class="font-bold text-base sm:text-lg">Local JSON Sync & Live Deck Editor</h3>
+                </div>
+                <button onclick="closeJsonModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-gemini-card">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto space-y-4 flex-1 text-sm">
+                <div class="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs sm:text-sm text-slate-700 dark:text-slate-300 space-y-1.5">
+                    <div class="font-semibold text-blue-600 dark:text-gemini-accent flex items-center gap-1.5">
+                        <i data-lucide="folder-git-2" class="w-4 h-4"></i> How <code class="font-mono">./questions_deck/</code> Multi-Deck Sync Works
+                    </div>
+                    <ul class="list-disc list-inside space-y-1 text-xs leading-relaxed">
+                        <li><strong>Automatic Server Mode (VS Code Live Server / <code class="font-mono">python -m http.server</code>):</strong> Create a folder named <code class="font-mono text-blue-500">questions_deck</code> next to this HTML file and drop any number of <code class="font-mono">.json</code> files inside. The app automatically scans <code class="font-mono">./questions_deck/</code> (or <code class="font-mono">./questions_deck/index.json</code>) and lists all your decks in the sidebar!</li>
+                        <li><strong>Zero-Server Mode (Direct <code class="font-mono">file://</code> double-click):</strong> Click <strong>"Link questions_deck Folder"</strong> in the top bar and select your <code class="font-mono">questions_deck</code> folder once. Every <code class="font-mono">.json</code> file inside will appear in your Deck Library, and clicking <strong>Rescan Folder</strong> reloads any edits immediately.</li>
+                    </ul>
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold uppercase tracking-wider text-slate-400">Current Deck JSON (`questions` array)</label>
+                    <div class="flex items-center gap-2">
+                        <button onclick="formatJsonEditor()" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-gemini-card hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-mono">Prettify</button>
+                        <button onclick="downloadCurrentJson()" class="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-gemini-green border border-emerald-500/20 hover:bg-emerald-500/20 inline-flex items-center gap-1 font-medium">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download .json
+                        </button>
+                    </div>
+                </div>
+
+                <textarea id="jsonEditorTextarea" rows="13" spellcheck="false" class="w-full font-mono text-xs sm:text-sm p-4 rounded-2xl bg-slate-900 text-emerald-300 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed"></textarea>
+                <p id="jsonErrorMsg" class="hidden text-xs text-rose-500 font-mono"></p>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-4 border-t border-slate-200 dark:border-gemini-border flex items-center justify-between gap-3 bg-slate-50 dark:bg-gemini-bg/50">
+                <button id="saveToFileHandleBtn" onclick="saveDirectlyToLinkedFile()" class="hidden px-4 py-2 rounded-xl text-xs sm:text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition inline-flex items-center gap-1.5">
+                    <i data-lucide="save" class="w-4 h-4"></i> Overwrite Linked Local File
+                </button>
+                <div class="flex items-center gap-2 ml-auto">
+                    <button onclick="closeJsonModal()" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-medium bg-slate-200 dark:bg-gemini-card text-slate-700 dark:text-slate-300">Cancel</button>
+                    <button onclick="applyJsonFromEditor()" class="px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm">Apply & Load Deck</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: Quick Add Question Form -->
+    <div id="addQuestionModal" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-fade-up">
+            <div class="px-6 py-4 border-b border-slate-200 dark:border-gemini-border flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-500"></i>
+                    <h3 class="font-bold text-base sm:text-lg">Add Question to Current Deck</h3>
+                </div>
+                <button onclick="closeAddQuestionModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-4 text-sm">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Question Type</label>
+                        <select id="newQType" onchange="toggleNewQuestionTypeUI()" class="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                            <option value="mcq">Standard Multiple Choice (A/B/C/D)</option>
+                            <option value="tbo_tf">TBO Multiple True/False (0 / 0.2 / 0.6 / 1.0 pt)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Topic / Category</label>
+                        <input id="newQTopic" type="text" placeholder="e.g. Cell Physiology / IBO" class="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Problem Statement *</label>
+                    <textarea id="newQText" rows="3" placeholder="Enter your question stem here (supports `inline code`, **bold**, and ![alt](image.png))" class="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Image Path / URL (Optional)</label>
+                        <input id="newQImage" type="text" placeholder="e.g. ./questions_deck/cell.png or https://..." class="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Image Caption (Optional)</label>
+                        <input id="newQImageCaption" type="text" placeholder="e.g. Figure 1: Electron micrograph of..." class="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label id="newQChoiceLabel0" class="block text-xs font-medium text-slate-400">Choice A *</label>
+                            <select id="newQTF0" class="hidden text-xs px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 font-mono">
+                                <option value="true">True</option>
+                                <option value="false">False</option>
+                            </select>
+                        </div>
+                        <input id="newQChoice0" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label id="newQChoiceLabel1" class="block text-xs font-medium text-slate-400">Choice B *</label>
+                            <select id="newQTF1" class="hidden text-xs px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 font-mono">
+                                <option value="true">True</option>
+                                <option value="false">False</option>
+                            </select>
+                        </div>
+                        <input id="newQChoice1" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label id="newQChoiceLabel2" class="block text-xs font-medium text-slate-400">Choice C</label>
+                            <select id="newQTF2" class="hidden text-xs px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 font-mono">
+                                <option value="true">True</option>
+                                <option value="false">False</option>
+                            </select>
+                        </div>
+                        <input id="newQChoice2" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label id="newQChoiceLabel3" class="block text-xs font-medium text-slate-400">Choice D</label>
+                            <select id="newQTF3" class="hidden text-xs px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 font-mono">
+                                <option value="true">True</option>
+                                <option value="false">False</option>
+                            </select>
+                        </div>
+                        <input id="newQChoice3" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div id="newQSingleCorrectWrap">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Correct Answer *</label>
+                        <select id="newQCorrect" class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border">
+                            <option value="0">Choice A</option>
+                            <option value="1">Choice B</option>
+                            <option value="2">Choice C</option>
+                            <option value="3">Choice D</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-1">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Hint (Optional)</label>
+                        <input id="newQHint" type="text" placeholder="Subtle clue..." class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Detailed Explanation (Shown after answering)</label>
+                    <textarea id="newQExplanation" rows="2" placeholder="Explain why each statement/choice is true or false..." class="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card border border-slate-200 dark:border-gemini-border"></textarea>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-200 dark:border-gemini-border flex justify-end gap-2 bg-slate-50 dark:bg-gemini-bg/50">
+                <button onclick="closeAddQuestionModal()" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-medium bg-slate-200 dark:bg-gemini-card">Cancel</button>
+                <button onclick="saveNewQuestionFromForm()" class="px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white">Add to Deck</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    <div id="toastBanner" class="fixed bottom-5 right-5 z-50 hidden items-center gap-2.5 px-4 py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs sm:text-sm font-medium shadow-xl">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0"></i>
+        <span id="toastText">Loaded JSON file</span>
+    </div>
+
+    <!-- Fullscreen Image Zoom Lightbox Modal -->
+    <div id="imageLightboxModal" onclick="closeImageLightbox()" class="fixed inset-0 z-50 hidden bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4 cursor-zoom-out">
+        <div class="max-w-5xl max-h-[85vh] flex flex-col items-center">
+            <img id="lightboxImg" src="" alt="Zoomed diagram" class="max-w-full max-h-[78vh] object-contain rounded-2xl shadow-2xl border border-white/15 bg-white/5">
+            <p id="lightboxCaption" class="mt-3 text-xs sm:text-sm text-slate-300 font-medium text-center"></p>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        /**************************************************************
+         * 2. APPLICATION STATE & MULTI-DECK REGISTRY
+         **************************************************************/
+        let deckRegistry = {};           // key -> { key, title, filename, sourceType ('folder'|'file'), questions: [], fileHandle: null }
+        let activeDeckKey = null;        // Currently selected deck key (or '__ALL__' for combined mode)
+        let rawDeck = [];                // Original normalized array of questions for active selection
+        let activeDeck = [];             // Currently active list (filtered/shuffled)
+        let currentIndex = 0;            // Current question index in activeDeck
+        let quizMode = 'instant';        // 'instant' (Gemini style) or 'exam'
+        let shuffleQuestions = false;
+        let shuffleChoices = false;
+        let currentFilter = 'all';       // 'all' | 'missed' | 'bookmarked'
+        let userResponses = {};          // Map of question.id -> { selectedIndex, tfSelections, isCorrect, score, correctSubCount, submitted, graded }
+        let deckProgressMap = {};        // Map of deckKey -> { userResponses: {} } so switching decks remembers your score!
+        let bookmarkedIds = new Set();   // Set of question.id
+        let fileHandle = null;           // FileSystemFileHandle for single-file 1-click re-sync
+        let directoryHandle = null;      // FileSystemDirectoryHandle for ./questions_deck/ folder re-sync
+        let localImageBlobUrls = {};     // Map of relative image filename -> ObjectURL when linked via folder picker
+        let lastFolderFilesList = null;  // Fallback FileList if webkitdirectory was used
+        let currentDeckTitle = "No Deck Loaded";
+
+        const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+        // Render LaTeX expressions ($...$ and $$...$$) inside any container using KaTeX
+        function renderLatexInElement(el) {
+            if (!el || typeof renderMathInElement !== 'function') return;
+            try {
+                renderMathInElement(el, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '$', right: '$', display: false },
+                        { left: '\\(', right: '\\)', display: false }
+                    ],
+                    throwOnError: false
+                });
+            } catch (err) {
+                console.warn('KaTeX render warning:', err);
+            }
+        }
+
+        // Official TBO (Thailand Biology Olympiad / IBO) 4-Statement Multiple True/False Scoring Function
+        // 0 or 1 correct -> 0 pt | 2 correct -> 0.2 pt | 3 correct -> 0.6 pt | 4 correct -> 1.0 pt
+        function calculateTboScore(correctSubCount, totalStatements = 4) {
+            if (totalStatements === 4) {
+                if (correctSubCount <= 1) return 0;
+                if (correctSubCount === 2) return 0.2;
+                if (correctSubCount === 3) return 0.6;
+                return 1.0;
+            }
+            // Fallback proportional scaling if a deck author puts != 4 statements
+            const ratio = correctSubCount / Math.max(1, totalStatements);
+            if (ratio <= 0.25) return 0;
+            if (ratio <= 0.5) return 0.2;
+            if (ratio < 1) return 0.6;
+            return 1.0;
+        }
+
+        function formatPts(val) {
+            return Number(Math.round(val * 100) / 100).toString();
+        }
+
+        // Helper to parse flexible boolean representations ("T", "True", true, 1, "จริง", etc.)
+        function parseFlexibleBoolean(val) {
+            if (typeof val === 'boolean') return val;
+            if (typeof val === 'number') return val === 1;
+            if (typeof val === 'string') {
+                const s = val.trim().toUpperCase();
+                if (['T', 'TRUE', '1', 'YES', 'Y', 'จริง', 'ถูก'].includes(s)) return true;
+                if (['F', 'FALSE', '0', 'NO', 'N', 'เท็จ', 'ผิด'].includes(s)) return false;
+            }
+            return Boolean(val);
+        }
+
+        // Add the missing UI and Modal functions here
+        function setQuizMode(mode) {
+            quizMode = mode;
+            document.getElementById('modeInstantBtn').className = mode === 'instant' 
+                ? "py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 bg-white dark:bg-gemini-card text-blue-600 dark:text-gemini-accent shadow-sm"
+                : "py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
+            
+            document.getElementById('modeExamBtn').className = mode === 'exam'
+                ? "py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 bg-white dark:bg-gemini-card text-blue-600 dark:text-gemini-accent shadow-sm"
+                : "py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
+            
+            // Re-render to show/hide instant feedback
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+        }
+
+        function toggleShuffleQuestions(isChecked) {
+            shuffleQuestions = isChecked;
+            rebuildActiveDeck();
+        }
+
+        function toggleShuffleChoices(isChecked) {
+            shuffleChoices = isChecked;
+            rebuildActiveDeck();
+        }
+
+        function setFilter(filterType) {
+            currentFilter = filterType;
+            updateFilterButtons();
+            rebuildActiveDeck();
+        }
+
+        function updateFilterButtons() {
+            const filters = ['all', 'missed', 'bookmarked'];
+            filters.forEach(f => {
+                const btn = document.getElementById(`filter-${f}`);
+                if (!btn) return;
+                if (f === currentFilter) {
+                    btn.className = "px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-gemini-accent font-medium";
+                } else {
+                    btn.className = "px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-gemini-card";
+                }
+            });
+        }
+
+        function openJsonModal() {
+            document.getElementById('jsonEditorTextarea').value = serializeCurrentDeckToJson();
+            document.getElementById('jsonErrorMsg').classList.add('hidden');
+            document.getElementById('jsonModal').classList.remove('hidden');
+        }
+
+        function closeJsonModal() {
+            document.getElementById('jsonModal').classList.add('hidden');
+        }
+
+        function formatJsonEditor() {
+            try {
+                const area = document.getElementById('jsonEditorTextarea');
+                const parsed = JSON.parse(area.value);
+                area.value = JSON.stringify(parsed, null, 2);
+                document.getElementById('jsonErrorMsg').classList.add('hidden');
+            } catch (e) {
+                const errEl = document.getElementById('jsonErrorMsg');
+                errEl.textContent = "Cannot format: " + e.message;
+                errEl.classList.remove('hidden');
+            }
+        }
+
+        function serializeCurrentDeckToJson() {
+            const exportData = rawDeck.map(q => {
+                const imgProps = {};
+                if (q.image) imgProps.image = q.image;
+                if (q.imageCaption) imgProps.imageCaption = q.imageCaption;
+
+                if (q.type === 'tbo_tf') {
+                    // Preserve original statement order when exporting
+                    const sortedChoices = [...q.choiceObjects].sort((a, b) => a.originalIndex - b.originalIndex);
+                    return {
+                        id: q.id,
+                        type: "tbo_tf",
+                        topic: q.topic,
+                        question: q.question,
+                        ...imgProps,
+                        choices: sortedChoices.map(c => c.text),
+                        answer: sortedChoices.map(c => Boolean(c.correctBool)),
+                        hint: q.hint,
+                        explanation: q.explanation
+                    };
+                }
+                const correctChoice = q.choiceObjects.find(c => c.isCorrect);
+                return {
+                    id: q.id,
+                    type: "mcq",
+                    topic: q.topic,
+                    question: q.question,
+                    ...imgProps,
+                    choices: q.choiceObjects.map(c => c.text),
+                    answer: correctChoice ? correctChoice.originalIndex : 0,
+                    hint: q.hint,
+                    explanation: q.explanation
+                };
+            });
+            return JSON.stringify({
+                title: currentDeckTitle,
+                questions: exportData
+            }, null, 2);
+        }
+
+        /**************************************************************
+         * 3. FLEXIBLE JSON NORMALIZER
+         * Accepts any reasonable JSON format a student might create!
+         **************************************************************/
+        function normalizeJsonDeck(parsedData, fallbackTitle = "Custom JSON Deck", deckPrefix = "DECK") {
+            let list = [];
+            let deckTitle = fallbackTitle;
+
+            if (Array.isArray(parsedData)) {
+                list = parsedData;
+            } else if (parsedData && typeof parsedData === 'object') {
+                deckTitle = parsedData.title || parsedData.name || parsedData.deck || fallbackTitle;
+                list = parsedData.questions || parsedData.items || parsedData.problems || parsedData.data || [];
+            }
+
+            if (!Array.isArray(list) || list.length === 0) {
+                throw new Error("JSON must contain a non-empty array of question objects.");
+            }
+
+            return {
+                title: deckTitle,
+                questions: list.map((item, idx) => {
+                    const rawId = item.id || `Q${idx + 1}`;
+                    const id = String(rawId).startsWith(deckPrefix) ? String(rawId) : `${deckPrefix}-${rawId}`;
+                    const topic = item.topic || item.category || item.subject || deckTitle || "General";
+                    const questionText = item.question || item.problem || item.statement || item.prompt || "Untitled Question";
+                    const image = item.image || item.img || item.figure || item.diagram || item.imageUrl || "";
+                    const imageCaption = item.imageCaption || item.caption || item.figureCaption || "";
+
+                    // Normalize choices / statements (supports choices, statements, options, subquestions)
+                    let rawChoices = item.choices || item.statements || item.options || item.answers || item.subquestions || [];
+                    let choicesArray = [];
+                    let choiceKeys = [];
+                    let embeddedBools = [];
+
+                    if (Array.isArray(rawChoices)) {
+                        choicesArray = rawChoices.map(c => {
+                            if (c && typeof c === 'object') {
+                                if (c.answer !== undefined || c.isTrue !== undefined || c.correct !== undefined) {
+                                    embeddedBools.push(parseFlexibleBoolean(c.answer ?? c.isTrue ?? c.correct));
+                                }
+                                return String(c.text || c.statement || c.choice || "");
+                            }
+                            return String(c);
+                        });
+                    } else if (rawChoices && typeof rawChoices === 'object') {
+                        choiceKeys = Object.keys(rawChoices);
+                        choicesArray = choiceKeys.map(k => String(rawChoices[k]));
+                    }
+
+                    if (choicesArray.length < 2) {
+                        choicesArray = ["True", "False"];
+                    }
+
+                    // Detect if this question is a TBO Multiple True/False question!
+                    // Triggered when:
+                    // 1. item.type is "tbo", "tbo_tf", "mtf", "multiple_tf", "true_false_multiple"
+                    // 2. item.answer is an Array of booleans/strings like [true, false, true, false] or ["T", "F", "T", "T"]
+                    // 3. item.answer is a 4-letter T/F string like "TFTF" or "T,F,T,F"
+                    // 4. choice objects had embedded { statement, answer: true/false }
+                    let rawAns = item.answer !== undefined ? item.answer : (item.correct !== undefined ? item.correct : item.correctAnswer);
+                    const explicitType = String(item.type || item.questionType || "").toLowerCase();
+
+                    let isTboTf = ['tbo', 'tbo_tf', 'mtf', 'multiple_tf', 'multi_tf', 'tf_multi'].includes(explicitType);
+                    let tfBools = [];
+
+                    if (embeddedBools.length === choicesArray.length && embeddedBools.length > 0) {
+                        isTboTf = true;
+                        tfBools = embeddedBools;
+                    } else if (Array.isArray(rawAns) && rawAns.length > 0) {
+                        isTboTf = true;
+                        tfBools = rawAns.map(parseFlexibleBoolean);
+                    } else if (typeof rawAns === 'string' && /^[TFtf,\s]{2,}$/.test(rawAns.trim()) && rawAns.replace(/[^TFtf]/g, '').length === choicesArray.length) {
+                        isTboTf = true;
+                        tfBools = rawAns.replace(/[^TFtf]/g, '').split('').map(ch => ch.toUpperCase() === 'T');
+                    } else if (rawAns && typeof rawAns === 'object' && !Array.isArray(rawAns)) {
+                        // e.g. "answer": {"A": true, "B": false, "C": true, "D": true}
+                        const vals = Object.values(rawAns);
+                        if (vals.length === choicesArray.length) {
+                            isTboTf = true;
+                            tfBools = vals.map(parseFlexibleBoolean);
+                        }
+                    }
+
+                    if (isTboTf) {
+                        const choiceObjects = choicesArray.map((text, cIdx) => ({
+                            originalIndex: cIdx,
+                            text: text,
+                            correctBool: tfBools[cIdx] !== undefined ? Boolean(tfBools[cIdx]) : true
+                        }));
+                        const answerKeySummary = choiceObjects.map((c, i) => `${LETTERS[i]}: ${c.correctBool ? 'True' : 'False'}`).join(', ');
+                        return {
+                            id,
+                            type: 'tbo_tf',
+                            topic,
+                            question: questionText,
+                            image,
+                            imageCaption,
+                            choiceObjects,
+                            hint: item.hint || item.clue || "",
+                            explanation: item.explanation || item.solution || item.rationale || `Correct key: ${answerKeySummary}.`
+                        };
+                    }
+
+                    // Otherwise: Standard Single-Answer MCQ
+                    let correctIndex = 0;
+
+                    if (typeof rawAns === 'number') {
+                        correctIndex = (rawAns >= 0 && rawAns < choicesArray.length) ? rawAns : Math.max(0, rawAns - 1);
+                    } else if (typeof rawAns === 'string') {
+                        const trimmed = rawAns.trim();
+                        const upper = trimmed.toUpperCase();
+                        if (upper.length === 1 && LETTERS.includes(upper)) {
+                            correctIndex = LETTERS.indexOf(upper);
+                        } else {
+                            const exactMatch = choicesArray.findIndex(c => c.trim().toLowerCase() === trimmed.toLowerCase());
+                            if (exactMatch !== -1) {
+                                correctIndex = exactMatch;
+                            } else if (!isNaN(Number(trimmed))) {
+                                correctIndex = Number(trimmed);
+                            }
+                        }
+                    }
+
+                    if (correctIndex < 0 || correctIndex >= choicesArray.length) {
+                        correctIndex = 0;
+                    }
+
+                    const choiceObjects = choicesArray.map((text, cIdx) => ({
+                        originalIndex: cIdx,
+                        text: text,
+                        isCorrect: cIdx === correctIndex
+                    }));
+
+                    return {
+                        id,
+                        type: 'mcq',
+                        topic,
+                        question: questionText,
+                        image,
+                        imageCaption,
+                        choiceObjects,
+                        hint: item.hint || item.clue || "",
+                        explanation: item.explanation || item.solution || item.rationale || `The correct choice is "${choicesArray[correctIndex]}".`
+                    };
+                })
+            };
+        }
+
+        /**************************************************************
+         * 4. ./questions_deck/ FOLDER DISCOVERY & LOCAL SYNC
+         * Works with:
+         *  A) Local server auto-scan of ./questions_deck/ HTML listing or index.json
+         *  B) window.showDirectoryPicker() (1-click folder linking + rescan)
+         *  C) <input type="file" webkitdirectory> fallback
+         **************************************************************/
+        async function rescanQuestionsDeckFolder(manualTrigger = false) {
+            // 1. If user linked a local folder handle via File System Access API, re-read all .json files in it!
+            if (directoryHandle) {
+                await readFromDirectoryHandle(directoryHandle, manualTrigger);
+                return;
+            }
+
+            // 2. Otherwise attempt to auto-discover ./questions_deck/ over HTTP (Live Server / python -m http.server)
+            const discoveredCount = await autoDiscoverServerQuestionsDeckFolder();
+            if (discoveredCount > 0) {
+                if (manualTrigger) {
+                    showToast(`Synced ${discoveredCount} JSON deck(s) from ./questions_deck/`);
+                }
+                return;
+            }
+
+            // 3. Also check legacy ./questions.json in root folder if present
+            const rootFound = await tryFetchDefaultJson(false);
+            if (!rootFound && manualTrigger) {
+                showToast("Running via file:// without a server — click 'Link questions_deck Folder' to select your folder!", true);
+            }
+        }
+
+        // Automatically discovers all .json files inside ./questions_deck/ when served via Python http.server, Live Server, Nginx, etc.
+        async function autoDiscoverServerQuestionsDeckFolder() {
+            const folderPath = './questions_deck/';
+            const cacheBuster = `?t=${Date.now()}`;
+            let jsonFileNames = new Set();
+
+            // Step A: Try optional ./questions_deck/index.json manifest if user created one
+            // Supports ["deck1.json", "deck2.json"] or { "decks": ["deck1.json", ...] }
+            try {
+                const idxRes = await fetch(`${folderPath}index.json${cacheBuster}`, { cache: 'no-store' });
+                if (idxRes.ok) {
+                    const manifest = await idxRes.json();
+                    const arr = Array.isArray(manifest) ? manifest : (manifest.decks || manifest.files || []);
+                    arr.forEach(f => {
+                        if (typeof f === 'string' && f.toLowerCase().endsWith('.json')) {
+                            jsonFileNames.add(f.replace(/^\.?\//, ''));
+                        }
+                    });
+                }
+            } catch (_) {}
+
+            // Step B: Fetch ./questions_deck/ directory listing HTML (auto-generated by python -m http.server, VS Code Live Server, etc.)
+            try {
+                const dirRes = await fetch(`${folderPath}${cacheBuster}`, { cache: 'no-store' });
+                if (dirRes.ok) {
+                    const contentType = dirRes.headers.get('content-type') || '';
+                    const text = await dirRes.text();
+                    if (contentType.includes('text/html') || text.includes('<a ') || text.includes('<A ')) {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(text, 'text/html');
+                        const links = doc.querySelectorAll('a[href]');
+                        links.forEach(a => {
+                            const href = decodeURIComponent(a.getAttribute('href') || '');
+                            // Extract clean filename if it ends with .json
+                            const cleanName = href.split('?')[0].split('#')[0].split('/').filter(Boolean).pop();
+                            if (cleanName && cleanName.toLowerCase().endsWith('.json') && cleanName.toLowerCase() !== 'index.json') {
+                                jsonFileNames.add(cleanName);
+                            }
+                        });
+                    }
+                }
+            } catch (_) {}
+
+            if (jsonFileNames.size === 0) {
+                updateFolderBannerStatus(false, "No server ./questions_deck/ detected (use Link Folder for file://)");
+                return 0;
+            }
+
+            // Fetch each discovered .json file inside ./questions_deck/
+            let loadedDecks = 0;
+            let firstLoadedKey = null;
+
+            for (const fname of jsonFileNames) {
+                try {
+                    const fileRes = await fetch(`${folderPath}${fname}${cacheBuster}`, { cache: 'no-store' });
+                    if (!fileRes.ok) continue;
+                    const rawText = await fileRes.text();
+                    const parsed = JSON.parse(rawText);
+                    const deckKey = `folder_${fname}`;
+                    const cleanTitle = fname.replace(/\.json$/i, '').replace(/[-_]/g, ' ');
+                    const normalized = normalizeJsonDeck(parsed, cleanTitle, fname.replace(/\.json$/i, ''));
+
+                    deckRegistry[deckKey] = {
+                        key: deckKey,
+                        title: normalized.title,
+                        filename: `questions_deck/${fname}`,
+                        sourceType: 'folder',
+                        questions: normalized.questions,
+                        fileHandle: null
+                    };
+                    if (!firstLoadedKey) firstLoadedKey = deckKey;
+                    loadedDecks++;
+                } catch (err) {
+                    console.warn(`Skipped invalid JSON in ./questions_deck/${fname}:`, err);
+                }
+            }
+
+            if (loadedDecks > 0) {
+                updateFolderBannerStatus(true, `Auto-synced ${loadedDecks} deck(s) from ./questions_deck/`);
+                renderDeckLibrary();
+                if (!activeDeckKey || !deckRegistry[activeDeckKey]) {
+                    selectDeckFromLibrary(firstLoadedKey);
+                } else {
+                    selectDeckFromLibrary(activeDeckKey);
+                }
+            }
+
+            return loadedDecks;
+        }
+
+        // Let user link their local ./questions_deck/ folder directly (works on file:// without any server!)
+        async function triggerFolderOpen() {
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite'
+                    });
+                    directoryHandle = dirHandle;
+                    await readFromDirectoryHandle(dirHandle, true);
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    // Fall back to <input webkitdirectory> if blocked by browser/iframe policy
+                }
+            }
+            document.getElementById('fallbackFolderInput').click();
+        }
+
+        async function readFromDirectoryHandle(dirHandle, showNotification = true) {
+            try {
+                // Remove old folder-sourced entries before re-populating
+                Object.keys(deckRegistry).forEach(k => {
+                    if (deckRegistry[k].sourceType === 'folder') delete deckRegistry[k];
+                });
+
+                let count = 0;
+                let firstKey = null;
+
+                for await (const entry of dirHandle.values()) {
+                    // Also index any image files (.png, .jpg, .jpeg, .svg, .webp, .gif) inside the linked folder so local images work even without a web server!
+                    if (entry.kind === 'file' && /\.(png|jpe?g|svg|webp|gif)$/i.test(entry.name)) {
+                        try {
+                            const imgFile = await entry.getFile();
+                            localImageBlobUrls[entry.name] = URL.createObjectURL(imgFile);
+                        } catch (_) {}
+                    }
+                    if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.json') && entry.name.toLowerCase() !== 'index.json') {
+                        try {
+                            const file = await entry.getFile();
+                            const text = await file.text();
+                            const parsed = JSON.parse(text);
+                            const deckKey = `folder_${entry.name}`;
+                            const fallbackTitle = entry.name.replace(/\.json$/i, '').replace(/[-_]/g, ' ');
+                            const normalized = normalizeJsonDeck(parsed, fallbackTitle, entry.name.replace(/\.json$/i, ''));
+
+                            deckRegistry[deckKey] = {
+                                key: deckKey,
+                                title: normalized.title,
+                                filename: `${dirHandle.name}/${entry.name}`,
+                                sourceType: 'folder',
+                                questions: normalized.questions,
+                                fileHandle: entry
+                            };
+                            if (!firstKey) firstKey = deckKey;
+                            count++;
+                        } catch (innerErr) {
+                            console.warn(`Could not parse ${entry.name}:`, innerErr);
+                        }
+                    }
+                }
+
+                if (count === 0) {
+                    showToast(`No valid .json files found inside folder "${dirHandle.name}"`, true);
+                    return;
+                }
+
+                updateFolderBannerStatus(true, `Linked "${dirHandle.name}/" (${count} JSON decks)`);
+                renderDeckLibrary();
+
+                if (firstKey && (!activeDeckKey || !deckRegistry[activeDeckKey])) {
+                    selectDeckFromLibrary(firstKey);
+                } else {
+                    selectDeckFromLibrary(activeDeckKey);
+                }
+
+                if (showNotification) {
+                    showToast(`Synced ${count} deck(s) from "${dirHandle.name}/"`);
+                }
+            } catch (err) {
+                showToast("Error reading folder: " + err.message, true);
+            }
+        }
+
+        // Fallback for browsers where <input webkitdirectory> is used
+        function handleFallbackFolderSelect(event) {
+            const files = Array.from(event.target.files || []);
+            // Index any local image files inside the selected folder (or subfolders) so relative image paths resolve automatically
+            files.filter(f => /\.(png|jpe?g|svg|webp|gif)$/i.test(f.name)).forEach(imgFile => {
+                const blobUrl = URL.createObjectURL(imgFile);
+                localImageBlobUrls[imgFile.name] = blobUrl;
+                if (imgFile.webkitRelativePath) {
+                    const relParts = imgFile.webkitRelativePath.split('/').slice(1).join('/');
+                    if (relParts) localImageBlobUrls[relParts] = blobUrl;
+                }
+            });
+
+            const jsonFiles = files.filter(f => f.name.toLowerCase().endsWith('.json') && f.name.toLowerCase() !== 'index.json');
+
+            if (jsonFiles.length === 0) {
+                showToast("No .json files found in the selected folder.", true);
+                return;
+            }
+
+            // Clear previous folder decks
+            Object.keys(deckRegistry).forEach(k => {
+                if (deckRegistry[k].sourceType === 'folder') delete deckRegistry[k];
+            });
+
+            let loaded = 0;
+            let firstKey = null;
+            const folderName = (jsonFiles[0].webkitRelativePath || '').split('/')[0] || 'questions_deck';
+
+            jsonFiles.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const parsed = JSON.parse(e.target.result);
+                        const deckKey = `folder_${file.name}`;
+                        const fallbackTitle = file.name.replace(/\.json$/i, '').replace(/[-_]/g, ' ');
+                        const normalized = normalizeJsonDeck(parsed, fallbackTitle, file.name.replace(/\.json$/i, ''));
+
+                        deckRegistry[deckKey] = {
+                            key: deckKey,
+                            title: normalized.title,
+                            filename: `${folderName}/${file.name}`,
+                            sourceType: 'folder',
+                            questions: normalized.questions,
+                            fileHandle: null
+                        };
+                        if (!firstKey) firstKey = deckKey;
+                    } catch (err) {
+                        console.warn(`Invalid JSON in ${file.name}:`, err);
+                    } finally {
+                        loaded++;
+                        if (loaded === jsonFiles.length) {
+                            updateFolderBannerStatus(true, `Loaded "${folderName}/" (${Object.values(deckRegistry).filter(d => d.sourceType === 'folder').length} decks)`);
+                            renderDeckLibrary();
+                            if (firstKey) selectDeckFromLibrary(firstKey);
+                            showToast(`Loaded ${jsonFiles.length} JSON deck(s) from ${folderName}/`);
+                        }
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            event.target.value = '';
+        }
+
+        function updateFolderBannerStatus(isLinked, message) {
+            const banner = document.getElementById('folderStatusBanner');
+            const textEl = document.getElementById('folderStatusText');
+            const dot = document.getElementById('syncStatusDot');
+            textEl.textContent = message;
+
+            if (isLinked) {
+                banner.className = "text-[11px] px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-gemini-green flex items-center justify-between gap-2";
+                dot.className = "w-2 h-2 rounded-full bg-emerald-500 shrink-0";
+            } else {
+                banner.className = "text-[11px] px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card/80 text-slate-600 dark:text-slate-400 flex items-center justify-between gap-2";
+            }
+        }
+
+        /**************************************************************
+         * 4B. DECK LIBRARY SIDEBAR RENDERING & DECK SWITCHING
+         **************************************************************/
+        function renderDeckLibrary() {
+            const listEl = document.getElementById('deckLibraryList');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+
+            const allEntries = Object.values(deckRegistry);
+            if (allEntries.length === 0) {
+                listEl.innerHTML = `
+                    <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-gemini-border text-center text-xs text-slate-400 space-y-2">
+                        <p>No JSON decks loaded yet.</p>
+                        <div class="flex items-center justify-center gap-2">
+                            <button onclick="triggerFolderOpen()" class="px-2.5 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-500 transition">Select Folder</button>
+                            <button onclick="triggerLocalFileOpen()" class="px-2.5 py-1.5 rounded-lg bg-slate-200 dark:bg-gemini-card text-slate-700 dark:text-slate-200 font-medium hover:opacity-90 transition">+ JSON File</button>
+                        </div>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            allEntries.sort((a, b) => {
+                const order = { folder: 0, file: 1 };
+                return (order[a.sourceType] ?? 9) - (order[b.sourceType] ?? 9);
+            });
+
+            allEntries.forEach(deck => {
+                const isSelected = (activeDeckKey === deck.key);
+                const savedResp = deckProgressMap[deck.key]?.userResponses || (isSelected ? userResponses : {});
+                const gradedEntries = Object.values(savedResp).filter(r => r.submitted !== false);
+                const answeredCount = gradedEntries.length;
+                const earnedPoints = gradedEntries.reduce((acc, r) => acc + (r.score !== undefined ? r.score : (r.isCorrect ? 1 : 0)), 0);
+                const totalCount = deck.questions.length;
+
+                let sourceBadge = '';
+                if (deck.sourceType === 'folder') {
+                    sourceBadge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-gemini-accent">folder</span>`;
+                } else if (deck.sourceType === 'file') {
+                    sourceBadge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-gemini-green">file</span>`;
+                } else {
+                    sourceBadge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 dark:bg-neutral-700 text-slate-500 dark:text-slate-400">starter</span>`;
+                }
+
+                const itemBtn = document.createElement('button');
+                itemBtn.className = `w-full text-left p-2.5 rounded-xl border transition flex items-center justify-between gap-2 ${
+                    isSelected
+                        ? 'bg-blue-600/10 dark:bg-blue-500/15 border-blue-500/50 text-blue-950 dark:text-white shadow-sm'
+                        : 'bg-slate-50/70 hover:bg-slate-100 dark:bg-gemini-card/50 dark:hover:bg-gemini-card border-slate-200/70 dark:border-gemini-border text-slate-700 dark:text-slate-200'
+                }`;
+                itemBtn.onclick = () => selectDeckFromLibrary(deck.key);
+
+                itemBtn.innerHTML = `
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5">
+                            ${sourceBadge}
+                            <span class="font-semibold text-xs sm:text-sm truncate">${deck.title}</span>
+                        </div>
+                        <div class="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate mt-0.5">${deck.filename}</div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded-lg bg-white dark:bg-gemini-surface border border-slate-200 dark:border-gemini-border">
+                            ${answeredCount > 0 ? `${formatPts(earnedPoints)}/${totalCount} pt` : `${totalCount} Qs`}
+                        </span>
+                    </div>
+                `;
+                listEl.appendChild(itemBtn);
+            });
+
+            lucide.createIcons();
+        }
+
+        function saveCurrentDeckProgress() {
+            if (activeDeckKey) {
+                deckProgressMap[activeDeckKey] = {
+                    userResponses: { ...userResponses }
+                };
+            }
+        }
+
+        function selectDeckFromLibrary(deckKey) {
+            if (!deckRegistry[deckKey]) return;
+            saveCurrentDeckProgress();
+
+            activeDeckKey = deckKey;
+            const deck = deckRegistry[deckKey];
+            rawDeck = deck.questions;
+            currentDeckTitle = deck.title;
+            fileHandle = deck.fileHandle || null;
+
+            // Restore saved progress for this deck if any
+            userResponses = deckProgressMap[deckKey]?.userResponses
+                ? { ...deckProgressMap[deckKey].userResponses }
+                : {};
+            currentIndex = 0;
+
+            const activeFileEl = document.getElementById('activeFileName');
+            if (activeFileEl) activeFileEl.textContent = `${deck.filename} (${rawDeck.length} Qs)`;
+
+            const reloadBtn = document.getElementById('reloadFileBtn');
+            const saveHandleBtn = document.getElementById('saveToFileHandleBtn');
+            if (fileHandle) {
+                if (reloadBtn) reloadBtn.classList.remove('hidden');
+                if (saveHandleBtn) saveHandleBtn.classList.remove('hidden');
+            } else {
+                if (reloadBtn) reloadBtn.classList.add('hidden');
+                if (saveHandleBtn) saveHandleBtn.classList.add('hidden');
+            }
+
+            rebuildActiveDeck();
+            renderDeckLibrary();
+        }
+
+        function combineAllLoadedDecks() {
+            saveCurrentDeckProgress();
+            const targetDecks = Object.values(deckRegistry);
+
+            const combinedQuestions = [];
+            targetDecks.forEach(d => {
+                d.questions.forEach(q => {
+                    combinedQuestions.push({
+                        ...q,
+                        topic: `${d.title} • ${q.topic}`
+                    });
+                });
+            });
+
+            if (combinedQuestions.length === 0) return;
+
+            activeDeckKey = '__ALL__';
+            rawDeck = combinedQuestions;
+            currentDeckTitle = `Combined Study Deck (${targetDecks.length} Decks)`;
+            userResponses = {};
+            currentIndex = 0;
+
+            const activeFileEl = document.getElementById('activeFileName');
+            if (activeFileEl) activeFileEl.textContent = `${currentDeckTitle} (${rawDeck.length} Qs)`;
+            rebuildActiveDeck();
+            renderDeckLibrary();
+            showToast(`Combined ${targetDecks.length} decks (${rawDeck.length} total questions)!`);
+        }
+
+        /**************************************************************
+         * 4C. SINGLE OR MULTI-FILE PICKER & DRAG-AND-DROP
+         **************************************************************/
+        async function triggerLocalFileOpen() {
+            if ('showOpenFilePicker' in window) {
+                try {
+                    const handles = await window.showOpenFilePicker({
+                        types: [{
+                            description: 'JSON Quiz Files',
+                            accept: { 'application/json': ['.json'] }
+                        }],
+                        multiple: true
+                    });
+                    for (const handle of handles) {
+                        await readFromFileHandle(handle);
+                    }
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                }
+            }
+            document.getElementById('fallbackFileInput').click();
+        }
+
+        async function readFromFileHandle(handle) {
+            try {
+                const file = await handle.getFile();
+                const text = await file.text();
+                fileHandle = handle;
+                loadJsonString(text, file.name, true, handle);
+                const reloadBtn = document.getElementById('reloadFileBtn');
+                const saveBtn = document.getElementById('saveToFileHandleBtn');
+                if (reloadBtn) reloadBtn.classList.remove('hidden');
+                if (saveBtn) saveBtn.classList.remove('hidden');
+            } catch (err) {
+                showToast("Could not read local file: " + err.message, true);
+            }
+        }
+        function updateFolderBannerStatus(isLinked, message) {
+            const banner = document.getElementById('folderStatusBanner');
+            const textEl = document.getElementById('folderStatusText');
+            const dot = document.getElementById('syncStatusDot');
+            if (textEl) textEl.textContent = message;
+
+            if (isLinked) {
+                if (banner) banner.className = "text-[11px] px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-gemini-green flex items-center justify-between gap-2";
+                if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-500 shrink-0";
+            } else {
+                if (banner) banner.className = "text-[11px] px-3 py-2 rounded-xl bg-slate-100 dark:bg-gemini-card/80 text-slate-600 dark:text-slate-400 flex items-center justify-between gap-2";
+            }
+        }
+
+        function handleFallbackFileSelect(event) {
+            const files = Array.from(event.target.files || []);
+            if (files.length === 0) return;
+
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    loadJsonString(e.target.result, file.name, true, null);
+                };
+                reader.readAsText(file);
+            });
+            event.target.value = '';
+        }
+
+        async function tryFetchDefaultJson(manualClick = false) {
+            try {
+                const res = await fetch('./questions.json?t=' + Date.now(), { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const text = await res.text();
+                loadJsonString(text, 'questions.json', true, null);
+                return true;
+            } catch (e) {
+                if (manualClick) {
+                    showToast("Use 'Link questions_deck Folder' or '+ JSON File' when opening via file://", true);
+                }
+                return false;
+            }
+        }
+
+        function loadJsonString(jsonStr, sourceLabel = "Custom.json", switchActive = true, linkedHandle = null) {
+            try {
+                const parsed = JSON.parse(jsonStr);
+                const cleanBase = sourceLabel.replace(/\.json$/i, '');
+                const normalized = normalizeJsonDeck(parsed, cleanBase, cleanBase);
+                const deckKey = `file_${sourceLabel}`;
+
+                deckRegistry[deckKey] = {
+                    key: deckKey,
+                    title: normalized.title,
+                    filename: sourceLabel,
+                    sourceType: 'file',
+                    questions: normalized.questions,
+                    fileHandle: linkedHandle
+                };
+
+                try {
+                    localStorage.setItem('studysync_last_custom_json', jsonStr);
+                    localStorage.setItem('studysync_last_filename', sourceLabel);
+                } catch (_) {}
+
+                renderDeckLibrary();
+                if (switchActive) {
+                    selectDeckFromLibrary(deckKey);
+                }
+                showToast(`Loaded "${normalized.title}" (${normalized.questions.length} Qs)`);
+            } catch (err) {
+                showToast("Invalid JSON format: " + err.message, true);
+            }
+        }
+
+        /**************************************************************
+         * 5. QUIZ ENGINE & RENDERING
+         **************************************************************/
+        function rebuildActiveDeck(onlyQuestionIds = null) {
+            // Deep clone rawDeck so choice shuffling doesn't mutate original order permanently
+            let list = rawDeck.map(q => ({
+                ...q,
+                choiceObjects: q.choiceObjects.map(c => ({ ...c }))
+            }));
+
+            if (onlyQuestionIds) {
+                list = list.filter(q => onlyQuestionIds.has(q.id));
+            } else if (currentFilter === 'missed') {
+                list = list.filter(q => userResponses[q.id] && userResponses[q.id].submitted !== false && (userResponses[q.id].score ?? (userResponses[q.id].isCorrect ? 1 : 0)) < 1);
+            } else if (currentFilter === 'bookmarked') {
+                list = list.filter(q => bookmarkedIds.has(q.id));
+            }
+
+            if (shuffleQuestions) {
+                list = shuffleArray(list);
+            }
+
+            if (shuffleChoices) {
+                list.forEach(q => {
+                    q.choiceObjects = shuffleArray(q.choiceObjects);
+                });
+            }
+
+            activeDeck = list;
+            if (currentIndex >= activeDeck.length) {
+                currentIndex = Math.max(0, activeDeck.length - 1);
+            }
+
+            document.getElementById('deckCountBadge').textContent = `${activeDeck.length} Qs`;
+            document.getElementById('summaryCardContainer').classList.add('hidden');
+            document.getElementById('quizCardContainer').classList.remove('hidden');
+
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+            updateScoreboard();
+        }
+
+        function shuffleArray(arr) {
+            const copy = [...arr];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        // Resolve local folder image paths or external URLs seamlessly
+        function resolveQuizImageSrc(rawSrc) {
+            if (!rawSrc) return '';
+            const trimmed = String(rawSrc).trim();
+            if (trimmed.startsWith('data:') || trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:')) {
+                return trimmed;
+            }
+            // Check if image was loaded via local folder picker
+            const cleanRel = trimmed.replace(/^\.?\/?(questions_deck\/)?/, '');
+            const baseName = cleanRel.split('/').pop();
+            if (localImageBlobUrls[cleanRel]) return localImageBlobUrls[cleanRel];
+            if (localImageBlobUrls[baseName]) return localImageBlobUrls[baseName];
+            return trimmed;
+        }
+
+        function openImageLightbox(src, caption = '') {
+            const modal = document.getElementById('imageLightboxModal');
+            const img = document.getElementById('lightboxImg');
+            const cap = document.getElementById('lightboxCaption');
+            img.src = src;
+            cap.textContent = caption || 'Click anywhere to close';
+            modal.classList.remove('hidden');
+        }
+
+        function closeImageLightbox() {
+            document.getElementById('imageLightboxModal').classList.add('hidden');
+        }
+
+        // Format inline backticks `code`, **bold**, and Markdown images ![alt](url) safely
+        function formatRichText(text) {
+            const escaped = String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+
+            // Code blocks ``` ... ```
+            let formatted = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
+                return `<pre class="my-2 p-3 rounded-xl bg-slate-900 text-emerald-300 font-mono text-xs sm:text-sm overflow-x-auto border border-slate-700"><code>${code.trim()}</code></pre>`;
+            });
+
+            // Markdown Images ![caption](url) inside question, choices, or explanations
+            formatted = formatted.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, rawUrl) => {
+                const resolved = resolveQuizImageSrc(rawUrl);
+                const safeAlt = alt || 'Diagram';
+                return `<span class="block my-3"><img src="${resolved}" alt="${safeAlt}" onclick="event.stopPropagation(); openImageLightbox(this.src, '${safeAlt.replace(/'/g, "\\'")}')" class="max-h-72 max-w-full rounded-2xl border border-slate-200 dark:border-gemini-border shadow-sm cursor-zoom-in hover:opacity-95 transition mx-auto" onerror="this.outerHTML='<span class=\\'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-500 font-mono\\'>⚠️ Image not found: ${rawUrl}</span>'"></span>`;
+            });
+
+            // Inline `code`
+            formatted = formatted.replace(/`([^`]+)`/g, `<code class="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-gemini-card font-mono text-[0.9em] text-blue-600 dark:text-gemini-accent border border-slate-200/60 dark:border-gemini-border">$1</code>`);
+
+            // Bold **text**
+            formatted = formatted.replace(/\*\*([^*]+)\*\*/g, `<strong class="font-semibold text-slate-900 dark:text-white">$1</strong>`);
+
+            return formatted;
+        }
+
+        function renderCurrentQuestion() {
+            const container = document.getElementById('choicesContainer');
+            const hintBox = document.getElementById('hintBox');
+            const expBox = document.getElementById('explanationBox');
+            const imgContainer = document.getElementById('questionImageContainer');
+
+            hintBox.classList.add('hidden');
+            expBox.classList.add('hidden');
+            if (imgContainer) {
+                imgContainer.classList.add('hidden');
+                imgContainer.innerHTML = '';
+            }
+
+            if (activeDeck.length === 0) {
+                const hasDecks = Object.keys(deckRegistry).length > 0;
+                document.getElementById('questionCounterText').textContent = hasDecks ? "No matching questions" : "Ready for your JSON Deck";
+                document.getElementById('topicBadge').textContent = hasDecks ? "Filter Empty" : "./questions_deck";
+                document.getElementById('progressBarFill').style.width = "0%";
+                document.getElementById('questionStatement').innerHTML = hasDecks
+                    ? `<p class="text-slate-400 text-base">No questions match this filter. Switch filter back to <strong>All</strong> on the left.</p>`
+                    : `<div class="py-8 text-center space-y-4">
+                        <div class="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center mx-auto">
+                            <i data-lucide="folder-open" class="w-7 h-7"></i>
+                        </div>
+                        <div class="space-y-1">
+                            <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Drop your <code class="font-mono text-blue-500">.json</code> deck here</h3>
+                            <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">Supports LaTeX math & chemistry like $\\text{Na}^+/\\text{K}^+$, TBO 4×True/False partial scoring, and local images.</p>
+                        </div>
+                        <div class="flex items-center justify-center gap-3 pt-2">
+                            <button onclick="triggerFolderOpen()" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition inline-flex items-center gap-2">
+                                <i data-lucide="folder-sync" class="w-4 h-4"></i> Select questions_deck Folder
+                            </button>
+                            <button onclick="triggerLocalFileOpen()" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium bg-slate-100 hover:bg-slate-200 dark:bg-gemini-card dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-gemini-border transition inline-flex items-center gap-2">
+                                <i data-lucide="file-plus-2" class="w-4 h-4 text-blue-500"></i> Load .json File
+                            </button>
+                        </div>
+                    </div>`;
+                container.innerHTML = '';
+                lucide.createIcons();
+                renderLatexInElement(document.getElementById('questionStatement'));
+                return;
+            }
+
+            const q = activeDeck[currentIndex];
+            const existingResponse = userResponses[q.id];
+
+            // Header & progress
+            document.getElementById('questionCounterText').textContent = `Question ${currentIndex + 1} of ${activeDeck.length}`;
+            document.getElementById('topicBadge').textContent = q.topic;
+            document.getElementById('questionIdLabel').textContent = `#${q.id}`;
+            const progressPct = ((currentIndex + 1) / activeDeck.length) * 100;
+            document.getElementById('progressBarFill').style.width = `${progressPct}%`;
+
+            // Show TBO badge if Multiple True/False
+            const typeBadge = document.getElementById('questionTypeBadge');
+            if (q.type === 'tbo_tf') {
+                typeBadge.classList.remove('hidden');
+            } else {
+                typeBadge.classList.add('hidden');
+            }
+
+            // Hint button visibility
+            const hintBtn = document.getElementById('hintBtn');
+            if (q.hint && q.hint.trim() !== "") {
+                hintBtn.classList.remove('hidden');
+                document.getElementById('hintContent').innerHTML = formatRichText(q.hint);
+            } else {
+                hintBtn.classList.add('hidden');
+            }
+
+            // Bookmark state
+            const isSaved = bookmarkedIds.has(q.id);
+            const bmBtn = document.getElementById('bookmarkBtn');
+            const bmText = document.getElementById('bookmarkText');
+            if (isSaved) {
+                bmBtn.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-500/15 text-amber-600 dark:text-gemini-amber border border-amber-500/30 transition";
+                bmText.textContent = "Saved";
+            } else {
+                bmBtn.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-gemini-card dark:hover:bg-neutral-700 text-slate-600 dark:text-slate-300 transition";
+                bmText.textContent = "Save";
+            }
+
+            // Statement
+            document.getElementById('questionStatement').innerHTML = formatRichText(q.question);
+
+            // Render Question Image / Diagram if provided via "image" field in JSON
+            if (q.image && String(q.image).trim() !== "" && imgContainer) {
+                const resolvedSrc = resolveQuizImageSrc(q.image);
+                const captionText = q.imageCaption || "";
+                imgContainer.classList.remove('hidden');
+                imgContainer.innerHTML = `
+                    <figure class="p-3 sm:p-4 rounded-2xl bg-slate-50/80 dark:bg-gemini-card/50 border border-slate-200 dark:border-gemini-border flex flex-col items-center">
+                        <img src="${resolvedSrc}" alt="${captionText || 'Question Diagram'}"
+                             onclick="openImageLightbox(this.src, '${captionText.replace(/'/g, "\\'")}')"
+                             class="max-h-80 w-auto max-w-full object-contain rounded-xl cursor-zoom-in hover:scale-[1.01] transition"
+                             onerror="this.parentElement.innerHTML='<div class=\\'p-4 text-xs font-mono text-rose-500 text-center\\'>⚠️ Could not load image: <code>${q.image}</code><br><span class=\\'text-slate-400\\'>Place the image file in your folder or check the file path.</span></div>'">
+                        ${captionText ? `<figcaption class="mt-2.5 text-xs text-slate-500 dark:text-slate-400 text-center font-medium">${formatRichText(captionText)}</figcaption>` : ''}
+                    </figure>
+                `;
+            }
+
+            // Render Choices (Branch between TBO Multiple True/False vs Standard MCQ)
+            container.innerHTML = '';
+
+            if (q.type === 'tbo_tf') {
+                const isSubmitted = existingResponse && existingResponse.submitted;
+                const revealFeedback = isSubmitted && (quizMode === 'instant' || existingResponse.graded);
+                const tfSelections = existingResponse?.tfSelections || {};
+
+                // Helper banner explaining TBO scoring rubric
+                const rubricBar = document.createElement('div');
+                rubricBar.className = "flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-700 dark:text-purple-300 mb-2";
+                rubricBar.innerHTML = `
+                    <span class="font-medium flex items-center gap-1.5">
+                        <i data-lucide="list-checks" class="w-4 h-4"></i>
+                        Mark every statement <strong>True</strong> or <strong>False</strong>:
+                    </span>
+                    <span class="font-mono text-[11px] bg-purple-500/10 px-2 py-0.5 rounded-md">
+                        0–1 right = 0 pt • 2 = 0.2 pt • 3 = 0.6 pt • 4 = 1.0 pt
+                    </span>
+                `;
+                container.appendChild(rubricBar);
+
+                q.choiceObjects.forEach((choice, idx) => {
+                    const letter = LETTERS[idx] || String(idx + 1);
+                    const pickedBool = tfSelections[idx]; // true, false, or undefined
+                    const hasPicked = (pickedBool === true || pickedBool === false);
+                    const isSubCorrect = hasPicked && (pickedBool === choice.correctBool);
+
+                    let rowClass = "p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition ";
+                    let badgeClass = "w-7 h-7 rounded-lg font-mono text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 ";
+
+                    if (!revealFeedback) {
+                        rowClass += hasPicked
+                            ? "bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/40"
+                            : "bg-slate-50/70 dark:bg-gemini-card/60 border-slate-200 dark:border-gemini-border";
+                        badgeClass += hasPicked
+                            ? "bg-blue-600 text-white"
+                            : "bg-white dark:bg-gemini-surface text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-gemini-border";
+                    } else if (isSubCorrect) {
+                        rowClass += "bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/50";
+                        badgeClass += "bg-emerald-500 text-white";
+                    } else {
+                        rowClass += "bg-rose-500/10 dark:bg-rose-500/15 border-rose-500/50";
+                        badgeClass += "bg-rose-500 text-white";
+                    }
+
+                    // True & False button styling
+                    let trueBtnClass = "px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono transition border ";
+                    let falseBtnClass = "px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono transition border ";
+
+                    if (!revealFeedback) {
+                        trueBtnClass += (pickedBool === true)
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white dark:bg-gemini-surface text-slate-600 dark:text-slate-300 border-slate-200 dark:border-gemini-border hover:border-emerald-500";
+                        falseBtnClass += (pickedBool === false)
+                            ? "bg-rose-600 text-white border-rose-600 shadow-sm"
+                            : "bg-white dark:bg-gemini-surface text-slate-600 dark:text-slate-300 border-slate-200 dark:border-gemini-border hover:border-rose-500";
+                    } else {
+                        // Graded state: highlight correct answer and show if user picked wrong
+                        if (choice.correctBool === true) {
+                            trueBtnClass += "bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400/50";
+                            falseBtnClass += (pickedBool === false)
+                                ? "bg-rose-600/80 text-white border-rose-600 line-through opacity-80"
+                                : "bg-slate-100 dark:bg-gemini-surface text-slate-400 border-slate-200 dark:border-gemini-border opacity-40";
+                        } else {
+                            falseBtnClass += "bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400/50";
+                            trueBtnClass += (pickedBool === true)
+                                ? "bg-rose-600/80 text-white border-rose-600 line-through opacity-80"
+                                : "bg-slate-100 dark:bg-gemini-surface text-slate-400 border-slate-200 dark:border-gemini-border opacity-40";
+                        }
+                    }
+
+                    const row = document.createElement('div');
+                    row.className = rowClass;
+                    row.innerHTML = `
+                        <div class="flex items-start gap-3 flex-1 min-w-0">
+                            <span class="${badgeClass}">${letter}</span>
+                            <div class="text-sm sm:text-base leading-relaxed flex-1">${formatRichText(choice.text)}</div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                            <button type="button" ${revealFeedback ? 'disabled' : ''} onclick="selectTboSubAnswer(${idx}, true)" class="${trueBtnClass}">
+                                TRUE
+                            </button>
+                            <button type="button" ${revealFeedback ? 'disabled' : ''} onclick="selectTboSubAnswer(${idx}, false)" class="${falseBtnClass}">
+                                FALSE
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(row);
+                });
+
+                // In Instant Mode, show a "Check TBO Answer (4/4 Selected)" button until submitted
+                const pickedCount = Object.keys(tfSelections).filter(k => tfSelections[k] === true || tfSelections[k] === false).length;
+                const totalStmts = q.choiceObjects.length;
+
+                if (quizMode === 'instant' && !isSubmitted) {
+                    const submitWrap = document.createElement('div');
+                    submitWrap.className = "pt-2 flex items-center justify-between gap-3";
+                    const allPicked = pickedCount === totalStmts;
+                    submitWrap.innerHTML = `
+                        <span class="text-xs font-mono text-slate-500 dark:text-slate-400">
+                            Selected: <strong>${pickedCount} / ${totalStmts}</strong> statements
+                        </span>
+                        <button type="button" onclick="submitTboQuestion()" ${allPicked ? '' : 'disabled'}
+                            class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 text-white shadow-md shadow-blue-500/20 disabled:opacity-40 disabled:pointer-events-none transition inline-flex items-center gap-2">
+                            <i data-lucide="check-check" class="w-4 h-4"></i>
+                            <span>Submit & Score TBO Question</span>
+                        </button>
+                    `;
+                    container.appendChild(submitWrap);
+                }
+
+                // Show TBO Explanation & Partial Credit Breakdown if revealed
+                if (revealFeedback) {
+                    const answerKeyStr = q.choiceObjects.map((c, i) => `${LETTERS[i]}:${c.correctBool ? 'T' : 'F'}`).join(' • ');
+                    const pts = existingResponse.score ?? 0;
+                    const subRight = existingResponse.correctSubCount ?? 0;
+
+                    expBox.classList.remove('hidden');
+                    const iconWrap = document.getElementById('explanationIconWrap');
+                    const expTitle = document.getElementById('explanationTitle');
+
+                    if (pts === 1) {
+                        expBox.className = "mt-6 p-5 rounded-2xl border bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/30 animate-fade-up";
+                        iconWrap.className = "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-emerald-500/20 text-emerald-600 dark:text-gemini-green";
+                        expTitle.textContent = `Perfect TBO Score! (+1.0 pt — ${subRight}/${totalStmts} correct)`;
+                        expTitle.className = "font-bold text-sm sm:text-base text-emerald-700 dark:text-gemini-green";
+                    } else if (pts > 0) {
+                        expBox.className = "mt-6 p-5 rounded-2xl border bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/30 animate-fade-up";
+                        iconWrap.className = "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-amber-500/20 text-amber-600 dark:text-gemini-amber";
+                        expTitle.textContent = `Partial Credit Earned! (+${formatPts(pts)} pt — ${subRight}/${totalStmts} correct)`;
+                        expTitle.className = "font-bold text-sm sm:text-base text-amber-700 dark:text-gemini-amber";
+                    } else {
+                        expBox.className = "mt-6 p-5 rounded-2xl border bg-rose-500/5 dark:bg-rose-500/10 border-rose-500/30 animate-fade-up";
+                        iconWrap.className = "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-rose-500/20 text-rose-600 dark:text-gemini-red";
+                        expTitle.textContent = `0 Points (${subRight}/${totalStmts} correct — need ≥2 for points)`;
+                        expTitle.className = "font-bold text-sm sm:text-base text-rose-700 dark:text-gemini-red";
+                    }
+
+                    document.getElementById('correctLetterTag').textContent = `Key: ${answerKeyStr}`;
+                    document.getElementById('explanationText').innerHTML = formatRichText(q.explanation);
+                }
+
+            } else {
+                // Standard Single-Choice MCQ
+                const revealFeedback = existingResponse && (quizMode === 'instant' || existingResponse.graded);
+
+                q.choiceObjects.forEach((choice, idx) => {
+                    const letter = LETTERS[idx] || String(idx + 1);
+                    const isSelected = existingResponse && existingResponse.selectedIndex === idx;
+                    const isRightChoice = choice.isCorrect;
+
+                    let btnClasses = "choice-btn w-full text-left p-4 rounded-2xl border flex items-start gap-3.5 transition ";
+                    let badgeClasses = "w-7 h-7 rounded-lg font-mono text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 transition ";
+                    let rightStatusHtml = "";
+
+                    if (!existingResponse) {
+                        btnClasses += "bg-slate-50/70 hover:bg-blue-50/60 dark:bg-gemini-card/60 dark:hover:bg-gemini-card border-slate-200 dark:border-gemini-border hover:border-blue-400 dark:hover:border-gemini-accent/60 cursor-pointer";
+                        badgeClasses += "bg-white dark:bg-gemini-surface text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-gemini-border";
+                    } else if (revealFeedback) {
+                        if (isRightChoice) {
+                            btnClasses += "bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/50 text-emerald-950 dark:text-emerald-100";
+                            badgeClasses += "bg-emerald-500 text-white";
+                            rightStatusHtml = `<span class="ml-auto text-xs font-semibold text-emerald-600 dark:text-gemini-green flex items-center gap-1 shrink-0 mt-1"><i data-lucide="check-circle-2" class="w-4 h-4"></i> Correct</span>`;
+                        } else if (isSelected && !isRightChoice) {
+                            btnClasses += "bg-rose-500/10 dark:bg-rose-500/15 border-rose-500/50 text-rose-950 dark:text-rose-100";
+                            badgeClasses += "bg-rose-500 text-white";
+                            rightStatusHtml = `<span class="ml-auto text-xs font-semibold text-rose-600 dark:text-gemini-red flex items-center gap-1 shrink-0 mt-1"><i data-lucide="x-circle" class="w-4 h-4"></i> Your pick</span>`;
+                        } else {
+                            btnClasses += "bg-slate-50/40 dark:bg-gemini-card/30 border-slate-200/60 dark:border-gemini-border/50 opacity-60";
+                            badgeClasses += "bg-slate-200 dark:bg-gemini-surface text-slate-500";
+                        }
+                    } else {
+                        if (isSelected) {
+                            btnClasses += "bg-blue-500/15 border-blue-500 text-blue-950 dark:text-blue-100";
+                            badgeClasses += "bg-blue-600 text-white";
+                        } else {
+                            btnClasses += "bg-slate-50/70 hover:bg-slate-100 dark:bg-gemini-card/60 border-slate-200 dark:border-gemini-border";
+                            badgeClasses += "bg-white dark:bg-gemini-surface text-slate-600 dark:text-slate-300";
+                        }
+                    }
+
+                    const btn = document.createElement('button');
+                    btn.className = btnClasses;
+                    btn.onclick = () => selectAnswer(idx);
+                    btn.innerHTML = `
+                        <span class="${badgeClasses}">${letter}</span>
+                        <span class="text-sm sm:text-base leading-relaxed flex-1">${formatRichText(choice.text)}</span>
+                        ${rightStatusHtml}
+                    `;
+                    container.appendChild(btn);
+                });
+
+                // Show Gemini Explanation Drawer if answered in Instant Mode
+                if (revealFeedback) {
+                    const correctIdx = q.choiceObjects.findIndex(c => c.isCorrect);
+                    const correctLetter = LETTERS[correctIdx] || '';
+                    expBox.classList.remove('hidden');
+
+                    const iconWrap = document.getElementById('explanationIconWrap');
+                    const expTitle = document.getElementById('explanationTitle');
+
+                    if (existingResponse.isCorrect) {
+                        expBox.className = "mt-6 p-5 rounded-2xl border bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/30 animate-fade-up";
+                        iconWrap.className = "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-emerald-500/20 text-emerald-600 dark:text-gemini-green";
+                        expTitle.textContent = "Spot on! (+1.0 pt)";
+                        expTitle.className = "font-bold text-sm sm:text-base text-emerald-700 dark:text-gemini-green";
+                    } else {
+                        expBox.className = "mt-6 p-5 rounded-2xl border bg-rose-500/5 dark:bg-rose-500/10 border-rose-500/30 animate-fade-up";
+                        iconWrap.className = "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-rose-500/20 text-rose-600 dark:text-gemini-red";
+                        expTitle.textContent = "Not quite — let's review (0 pt)";
+                        expTitle.className = "font-bold text-sm sm:text-base text-rose-700 dark:text-gemini-red";
+                    }
+
+                    document.getElementById('correctLetterTag').textContent = `Correct Answer: ${correctLetter}`;
+                    document.getElementById('explanationText').innerHTML = formatRichText(q.explanation);
+                }
+            }
+
+            // Navigation button states
+            document.getElementById('prevBtn').disabled = (currentIndex === 0);
+            const nextBtnText = document.getElementById('nextBtnText');
+            nextBtnText.textContent = (currentIndex === activeDeck.length - 1) ? "View Summary" : "Next Question";
+
+            const finishExamBtn = document.getElementById('finishExamBtn');
+            if (quizMode === 'exam') {
+                finishExamBtn.classList.remove('hidden');
+            } else {
+                finishExamBtn.classList.add('hidden');
+            }
+
+            lucide.createIcons();
+            // Render LaTeX formulas ($\text{Na}^+/\text{K}^+$, $$...$$, etc.) inside question, choices, hint, and explanation
+            renderLatexInElement(document.getElementById('quizCardContainer'));
+        }
+
+        function selectAnswer(choiceIdx) {
+            if (activeDeck.length === 0) return;
+            const q = activeDeck[currentIndex];
+            if (q.type === 'tbo_tf') return;
+
+            // In Instant mode, lock choice once answered (unless user resets)
+            if (quizMode === 'instant' && userResponses[q.id]) {
+                return;
+            }
+
+            const chosen = q.choiceObjects[choiceIdx];
+            userResponses[q.id] = {
+                selectedIndex: choiceIdx,
+                isCorrect: chosen.isCorrect,
+                score: chosen.isCorrect ? 1.0 : 0.0,
+                submitted: true,
+                graded: quizMode === 'instant'
+            };
+
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+            updateScoreboard();
+            renderDeckLibrary();
+        }
+
+        // Handle selecting True/False on an individual sub-statement of a TBO question
+        function selectTboSubAnswer(subIdx, boolVal) {
+            if (activeDeck.length === 0) return;
+            const q = activeDeck[currentIndex];
+            if (q.type !== 'tbo_tf') return;
+
+            const existing = userResponses[q.id] || { tfSelections: {}, submitted: false, graded: false };
+            // Lock if already submitted in instant mode
+            if (quizMode === 'instant' && existing.submitted) return;
+
+            const updatedSelections = { ...(existing.tfSelections || {}), [subIdx]: Boolean(boolVal) };
+            const totalStmts = q.choiceObjects.length;
+            const pickedCount = Object.keys(updatedSelections).length;
+
+            // Pre-compute how many sub-statements match the key
+            let rightCount = 0;
+            q.choiceObjects.forEach((c, idx) => {
+                if (updatedSelections[idx] === c.correctBool) rightCount++;
+            });
+            const calculatedPts = calculateTboScore(rightCount, totalStmts);
+
+            userResponses[q.id] = {
+                tfSelections: updatedSelections,
+                correctSubCount: rightCount,
+                score: calculatedPts,
+                isCorrect: calculatedPts === 1.0,
+                // In Exam Mode, mark submitted once all 4 statements have a T/F selection
+                submitted: quizMode === 'exam' ? (pickedCount === totalStmts) : false,
+                graded: false
+            };
+
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+            updateScoreboard();
+        }
+
+        // Grade the TBO 4-statement question in Instant Study Mode
+        function submitTboQuestion() {
+            if (activeDeck.length === 0) return;
+            const q = activeDeck[currentIndex];
+            if (q.type !== 'tbo_tf') return;
+
+            const existing = userResponses[q.id];
+            if (!existing || !existing.tfSelections) return;
+
+            const totalStmts = q.choiceObjects.length;
+            const pickedCount = Object.keys(existing.tfSelections).length;
+            if (pickedCount < totalStmts) {
+                showToast(`Please select True or False for all ${totalStmts} statements first!`, true);
+                return;
+            }
+
+            let rightCount = 0;
+            q.choiceObjects.forEach((c, idx) => {
+                if (existing.tfSelections[idx] === c.correctBool) rightCount++;
+            });
+            const pts = calculateTboScore(rightCount, totalStmts);
+
+            userResponses[q.id] = {
+                ...existing,
+                correctSubCount: rightCount,
+                score: pts,
+                isCorrect: pts === 1.0,
+                submitted: true,
+                graded: true
+            };
+
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+            updateScoreboard();
+            renderDeckLibrary();
+        }
+
+        function renderQuestionNavigator() {
+            const grid = document.getElementById('questionGrid');
+            grid.innerHTML = '';
+
+            activeDeck.forEach((q, idx) => {
+                const resp = userResponses[q.id];
+                const isCurrent = idx === currentIndex;
+                const isSaved = bookmarkedIds.has(q.id);
+
+                let pillClass = "h-8 rounded-lg font-mono text-xs font-semibold flex items-center justify-center transition relative ";
+
+                if (isCurrent) {
+                    pillClass += "ring-2 ring-blue-500 dark:ring-gemini-accent ";
+                }
+
+                if (!resp || resp.submitted === false) {
+                    pillClass += "bg-slate-100 dark:bg-gemini-card text-slate-600 dark:text-slate-300 hover:bg-slate-200";
+                } else if (quizMode === 'exam' && !resp.graded) {
+                    pillClass += "bg-blue-500/20 text-blue-600 dark:text-gemini-accent border border-blue-500/30";
+                } else {
+                    const pts = resp.score !== undefined ? resp.score : (resp.isCorrect ? 1 : 0);
+                    if (pts === 1) {
+                        pillClass += "bg-emerald-500/20 text-emerald-700 dark:text-gemini-green border border-emerald-500/30";
+                    } else if (pts > 0) {
+                        pillClass += "bg-amber-500/25 text-amber-700 dark:text-gemini-amber border border-amber-500/40";
+                    } else {
+                        pillClass += "bg-rose-500/20 text-rose-700 dark:text-gemini-red border border-rose-500/30";
+                    }
+                }
+
+                const btn = document.createElement('button');
+                btn.className = pillClass;
+                btn.onclick = () => {
+                    currentIndex = idx;
+                    renderCurrentQuestion();
+                    renderQuestionNavigator();
+                };
+                btn.innerHTML = `
+                    ${idx + 1}
+                    ${isSaved ? '<span class="w-2 h-2 rounded-full bg-amber-400 absolute -top-0.5 -right-0.5"></span>' : ''}
+                `;
+                grid.appendChild(btn);
+            });
+        }
+
+        function updateScoreboard() {
+            const responses = Object.values(userResponses).filter(r => r.submitted !== false);
+            let fullCorrect = 0;
+            let partialCount = 0;
+            let zeroCount = 0;
+            let earnedPoints = 0;
+
+            responses.forEach(r => {
+                const pts = r.score !== undefined ? r.score : (r.isCorrect ? 1.0 : 0.0);
+                earnedPoints += pts;
+                if (pts === 1.0) fullCorrect++;
+                else if (pts > 0) partialCount++;
+                else zeroCount++;
+            });
+
+            const totalAnswered = responses.length;
+
+            document.getElementById('scorePointsText').textContent = `${formatPts(earnedPoints)} / ${totalAnswered} pts`;
+            document.getElementById('scoreCorrectCount').textContent = fullCorrect;
+            document.getElementById('scorePartialCount').textContent = partialCount;
+            document.getElementById('scoreWrongCount').textContent = zeroCount;
+
+            const accuracy = totalAnswered > 0 ? Math.round((earnedPoints / totalAnswered) * 100) : 100;
+            document.getElementById('accuracyBadge').textContent = `${accuracy}%`;
+
+            const retrySideBtn = document.getElementById('retryMissedSideBtn');
+            if (zeroCount + partialCount > 0) {
+                retrySideBtn.classList.remove('hidden');
+            } else {
+                retrySideBtn.classList.add('hidden');
+            }
+        }
+
+        function nextQuestion() {
+            if (currentIndex < activeDeck.length - 1) {
+                currentIndex++;
+                renderCurrentQuestion();
+                renderQuestionNavigator();
+            } else {
+                showSummaryScreen();
+            }
+        }
+
+        function prevQuestion() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                renderCurrentQuestion();
+                renderQuestionNavigator();
+            }
+        }
+
+        function toggleHint() {
+            const hintBox = document.getElementById('hintBox');
+            hintBox.classList.toggle('hidden');
+        }
+
+        function toggleBookmarkCurrent() {
+            if (activeDeck.length === 0) return;
+            const q = activeDeck[currentIndex];
+            if (bookmarkedIds.has(q.id)) {
+                bookmarkedIds.delete(q.id);
+            } else {
+                bookmarkedIds.add(q.id);
+            }
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+        }
+
+        /**************************************************************
+         * 6. SUMMARY SCREEN & RETRY MISSED
+         **************************************************************/
+        function showSummaryScreen() {
+            // Finalize grading for all questions (including any partially filled TBO questions in Exam mode)
+            activeDeck.forEach(q => {
+                const r = userResponses[q.id];
+                if (!r) return;
+                if (q.type === 'tbo_tf' && r.tfSelections && Object.keys(r.tfSelections).length > 0) {
+                    let rightCount = 0;
+                    q.choiceObjects.forEach((c, idx) => {
+                        if (r.tfSelections[idx] === c.correctBool) rightCount++;
+                    });
+                    r.correctSubCount = rightCount;
+                    r.score = calculateTboScore(rightCount, q.choiceObjects.length);
+                    r.isCorrect = (r.score === 1.0);
+                    r.submitted = true;
+                }
+                r.graded = true;
+            });
+
+            let fullCorrect = 0;
+            let partial = 0;
+            let wrong = 0;
+            let skipped = 0;
+            let totalPoints = 0;
+
+            activeDeck.forEach(q => {
+                const r = userResponses[q.id];
+                if (!r || r.submitted === false) {
+                    skipped++;
+                } else {
+                    const pts = r.score !== undefined ? r.score : (r.isCorrect ? 1.0 : 0.0);
+                    totalPoints += pts;
+                    if (pts === 1.0) fullCorrect++;
+                    else if (pts > 0) partial++;
+                    else wrong++;
+                }
+            });
+
+            const total = activeDeck.length || 1;
+            const pct = Math.round((totalPoints / total) * 100);
+
+            document.getElementById('sumCorrect').textContent = fullCorrect;
+            document.getElementById('sumPartial').textContent = partial;
+            document.getElementById('sumWrong').textContent = wrong;
+            document.getElementById('sumSkipped').textContent = skipped;
+            document.getElementById('summaryPercentText').textContent = `${pct}%`;
+            document.getElementById('summaryPointsSubtext').textContent = `${formatPts(totalPoints)} / ${total} pts`;
+
+            // Animate SVG circle (circumference = 2 * pi * 42 ≈ 264)
+            const offset = 264 - (264 * pct) / 100;
+            document.getElementById('summaryScoreCircle').style.strokeDashoffset = offset;
+
+            const retryBtn = document.getElementById('summaryRetryMissedBtn');
+            if (wrong + partial > 0) {
+                retryBtn.classList.remove('hidden');
+            } else {
+                retryBtn.classList.add('hidden');
+            }
+
+            document.getElementById('quizCardContainer').classList.add('hidden');
+            document.getElementById('summaryCardContainer').classList.remove('hidden');
+            updateScoreboard();
+            renderQuestionNavigator();
+            renderDeckLibrary();
+        }
+
+        function returnToQuestions() {
+            document.getElementById('summaryCardContainer').classList.add('hidden');
+            document.getElementById('quizCardContainer').classList.remove('hidden');
+            renderCurrentQuestion();
+        }
+
+        function startRetryMissed() {
+            const missedIds = new Set(
+                Object.entries(userResponses)
+                    .filter(([_, r]) => r.submitted !== false && (r.score ?? (r.isCorrect ? 1 : 0)) < 1.0)
+                    .map(([id, _]) => id)
+            );
+            if (missedIds.size === 0) {
+                showToast("No imperfect or missed questions to retry!");
+                return;
+            }
+            // Clear responses for those imperfect/missed questions so the student can re-attempt them
+            missedIds.forEach(id => delete userResponses[id]);
+            currentIndex = 0;
+            rebuildActiveDeck(missedIds);
+            showToast(`Retrying ${missedIds.size} question(s) that scored < 1.0 pt`);
+        }
+
+        function resetQuizProgress() {
+            userResponses = {};
+            if (activeDeckKey && deckProgressMap[activeDeckKey]) {
+                delete deckProgressMap[activeDeckKey];
+            }
+            currentIndex = 0;
+            currentFilter = 'all';
+            updateFilterButtons();
+            rebuildActiveDeck();
+            renderDeckLibrary();
+            showToast("Deck progress reset");
+        }
+
+        /**************************************************************
+         * 7. SETTINGS, MODALS & JSON EXPORT/SAVE
+         **************************************************************/
+        function handlePresetChange(presetKey) {
+            if (deckRegistry[presetKey]) {
+                selectDeckFromLibrary(presetKey);
+            }
+        }
+
+        function applyJsonFromEditor() {
+            const area = document.getElementById('jsonEditorTextarea');
+            const errEl = document.getElementById('jsonErrorMsg');
+            try {
+                JSON.parse(area.value); // Validate first
+                loadJsonString(area.value, "Edited_Deck.json", true);
+                closeJsonModal();
+            } catch (e) {
+                errEl.textContent = "JSON Syntax Error: " + e.message;
+                errEl.classList.remove('hidden');
+            }
+        }
+
+        async function saveDirectlyToLinkedFile() {
+            if (!fileHandle) return;
+            const area = document.getElementById('jsonEditorTextarea');
+            try {
+                JSON.parse(area.value);
+                const writable = await fileHandle.createWritable();
+                await writable.write(area.value);
+                await writable.close();
+                loadJsonString(area.value, fileHandle.name, true);
+                closeJsonModal();
+                showToast(`Saved directly to ${fileHandle.name}!`);
+            } catch (err) {
+                showToast("Failed to write to file: " + err.message, true);
+            }
+        }
+
+        function downloadCurrentJson() {
+            const jsonText = document.getElementById('jsonEditorTextarea').value || serializeCurrentDeckToJson();
+            const blob = new Blob([jsonText], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'questions.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("Downloaded questions.json");
+        }
+
+        // Visual Add Question Modal
+        function openAddQuestionModal() {
+            toggleNewQuestionTypeUI();
+            document.getElementById('addQuestionModal').classList.remove('hidden');
+        }
+
+        function closeAddQuestionModal() {
+            document.getElementById('addQuestionModal').classList.add('hidden');
+        }
+
+        function toggleNewQuestionTypeUI() {
+            const qType = document.getElementById('newQType').value;
+            const isTbo = (qType === 'tbo_tf');
+            const singleCorrectWrap = document.getElementById('newQSingleCorrectWrap');
+
+            if (isTbo) {
+                singleCorrectWrap.classList.add('hidden');
+            } else {
+                singleCorrectWrap.classList.remove('hidden');
+            }
+
+            for (let i = 0; i < 4; i++) {
+                const lbl = document.getElementById(`newQChoiceLabel${i}`);
+                const tfSelect = document.getElementById(`newQTF${i}`);
+                if (isTbo) {
+                    lbl.textContent = `Statement ${LETTERS[i]} *`;
+                    tfSelect.classList.remove('hidden');
+                } else {
+                    lbl.textContent = i < 2 ? `Choice ${LETTERS[i]} *` : `Choice ${LETTERS[i]}`;
+                    tfSelect.classList.add('hidden');
+                }
+            }
+        }
+
+        function saveNewQuestionFromForm() {
+            const qType = document.getElementById('newQType').value;
+            const topic = document.getElementById('newQTopic').value.trim() || "Custom";
+            const question = document.getElementById('newQText').value.trim();
+            const image = document.getElementById('newQImage').value.trim();
+            const imageCaption = document.getElementById('newQImageCaption').value.trim();
+            const c0 = document.getElementById('newQChoice0').value.trim();
+            const c1 = document.getElementById('newQChoice1').value.trim();
+            const c2 = document.getElementById('newQChoice2').value.trim();
+            const c3 = document.getElementById('newQChoice3').value.trim();
+            const correctIdx = Number(document.getElementById('newQCorrect').value);
+            const hint = document.getElementById('newQHint').value.trim();
+            const explanation = document.getElementById('newQExplanation').value.trim();
+
+            if (qType === 'tbo_tf') {
+                if (!question || !c0 || !c1 || !c2 || !c3) {
+                    showToast("TBO Multiple True/False questions require a stem and all 4 statements (A-D).", true);
+                    return;
+                }
+                const rawStmts = [c0, c1, c2, c3];
+                const bools = [0, 1, 2, 3].map(i => document.getElementById(`newQTF${i}`).value === 'true');
+                const keySummary = bools.map((b, i) => `${LETTERS[i]}: ${b ? 'True' : 'False'}`).join(', ');
+
+                const newTboObj = {
+                    id: `Q-${rawDeck.length + 1}`,
+                    type: 'tbo_tf',
+                    topic,
+                    question,
+                    image,
+                    imageCaption,
+                    choiceObjects: rawStmts.map((text, idx) => ({
+                        originalIndex: idx,
+                        text,
+                        correctBool: bools[idx]
+                    })),
+                    hint,
+                    explanation: explanation || `Correct TBO Key: ${keySummary}.`
+                };
+                rawDeck.push(newTboObj);
+            } else {
+                if (!question || !c0 || !c1) {
+                    showToast("Please provide a question and at least Choice A & B", true);
+                    return;
+                }
+
+                const rawChoices = [c0, c1, c2, c3].filter(c => c !== "");
+                const safeCorrect = Math.min(correctIdx, rawChoices.length - 1);
+
+                const newQuestionObj = {
+                    id: `Q-${rawDeck.length + 1}`,
+                    type: 'mcq',
+                    topic,
+                    question,
+                    image,
+                    imageCaption,
+                    choiceObjects: rawChoices.map((text, idx) => ({
+                        originalIndex: idx,
+                        text,
+                        isCorrect: idx === safeCorrect
+                    })),
+                    hint,
+                    explanation: explanation || `The correct answer is "${rawChoices[safeCorrect]}".`
+                };
+                rawDeck.push(newQuestionObj);
+            }
+
+            rebuildActiveDeck();
+            currentIndex = activeDeck.length - 1;
+            renderCurrentQuestion();
+            renderQuestionNavigator();
+            renderDeckLibrary();
+            closeAddQuestionModal();
+            showToast("Added new question to deck!");
+        }
+
+        /**************************************************************
+         * 8. THEME, DRAG-AND-DROP & KEYBOARD LISTENERS
+         **************************************************************/
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = html.classList.toggle('dark');
+            html.classList.toggle('light', !isDark);
+            const icon = document.getElementById('themeIcon');
+            icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
+            lucide.createIcons();
+        }
+
+        function showToast(msg, isError = false) {
+            const banner = document.getElementById('toastBanner');
+            const text = document.getElementById('toastText');
+            text.textContent = msg;
+            banner.classList.remove('hidden');
+            banner.classList.add('flex');
+            setTimeout(() => {
+                banner.classList.add('hidden');
+                banner.classList.remove('flex');
+            }, 3400);
+        }
+
+        // Global Drag & Drop JSON file support
+        window.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            document.getElementById('dropOverlay').classList.remove('hidden');
+            document.getElementById('dropOverlay').classList.add('flex');
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            if (e.relatedTarget === null) {
+                document.getElementById('dropOverlay').classList.add('hidden');
+                document.getElementById('dropOverlay').classList.remove('flex');
+            }
+        });
+
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            document.getElementById('dropOverlay').classList.add('hidden');
+            document.getElementById('dropOverlay').classList.remove('flex');
+
+            const files = Array.from(e.dataTransfer.files || []).filter(
+                f => f.name.toLowerCase().endsWith('.json') || f.type === 'application/json'
+            );
+
+            if (files.length > 0) {
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => loadJsonString(ev.target.result, file.name, true, null);
+                    reader.readAsText(file);
+                });
+            } else {
+                showToast("Please drop one or more valid .json files", true);
+            }
+        });
+
+        // Keyboard Shortcuts
+        window.addEventListener('keydown', (e) => {
+            // Ignore shortcuts when typing inside inputs or textareas
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+            if (!document.getElementById('jsonModal').classList.contains('hidden')) return;
+            if (!document.getElementById('addQuestionModal').classList.contains('hidden')) return;
+
+            const key = e.key.toUpperCase();
+            const currentQ = activeDeck[currentIndex];
+
+            if (['1', '2', '3', '4'].includes(key)) {
+                const idx = Number(key) - 1;
+                if (currentQ && idx < currentQ.choiceObjects.length) {
+                    if (currentQ.type === 'tbo_tf') {
+                        // In TBO mode, pressing 1-4 or A-D toggles that statement between True -> False -> True
+                        const currVal = userResponses[currentQ.id]?.tfSelections?.[idx];
+                        selectTboSubAnswer(idx, currVal === undefined ? true : !currVal);
+                    } else {
+                        selectAnswer(idx);
+                    }
+                }
+            } else if (['A', 'B', 'C', 'D'].includes(key) && !e.ctrlKey && !e.metaKey) {
+                const idx = LETTERS.indexOf(key);
+                if (currentQ && idx < currentQ.choiceObjects.length) {
+                    if (currentQ.type === 'tbo_tf') {
+                        const currVal = userResponses[currentQ.id]?.tfSelections?.[idx];
+                        selectTboSubAnswer(idx, currVal === undefined ? true : !currVal);
+                    } else {
+                        selectAnswer(idx);
+                    }
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                // If on an unsubmitted TBO question with all 4 picked in Instant mode, Enter submits it first!
+                if (currentQ && currentQ.type === 'tbo_tf' && quizMode === 'instant') {
+                    const resp = userResponses[currentQ.id];
+                    const pickedCount = Object.keys(resp?.tfSelections || {}).length;
+                    if (resp && !resp.submitted && pickedCount === currentQ.choiceObjects.length) {
+                        submitTboQuestion();
+                        return;
+                    }
+                }
+                nextQuestion();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                nextQuestion();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                prevQuestion();
+            } else if (key === 'H') {
+                toggleHint();
+            } else if (key === 'S' || key === 'B') {
+                toggleBookmarkCurrent();
+            } else if (key === 'R') {
+                resetQuizProgress();
+            }
+        });
+
+        // Initialize on Startup
+        window.onload = async () => {
+            renderDeckLibrary();
+            rebuildActiveDeck();
+
+            // Automatically scan ./questions_deck/ directory on startup (if using Live Server / local server)
+            await rescanQuestionsDeckFolder(false);
+            lucide.createIcons();
+        };
+    </script>
+</body>
+</html>
